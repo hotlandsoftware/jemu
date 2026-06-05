@@ -39,9 +39,11 @@ CHIP8_OBJ := $(patsubst %.c, $(BUILDDIR)/%.o, $(CORE_SRC) $(CHIP8_SRC))
 
 RCA_CFLAGS := $(BASE_CFLAGS) \
 	-Ijemu-rca/include \
+	-Ijemu-rca/src \
 	-Ijemu-rca/src/cpu \
 	-Ijemu-rca/src/vga \
 	-Ijemu-rca/src/hardware \
+	-Ijemu-rca/src/devices \
 	$(SDL2_CFLAGS)
 RCA_LDFLAGS := $(SDL2_LIBS) -pthread
 
@@ -56,6 +58,7 @@ RCA_SRC := \
 	jemu-rca/src/cpu/cdp1802.c \
 	jemu-rca/src/vga/cdp1861.c \
 	jemu-rca/src/vga/display_sdl.c \
+	jemu-rca/src/devices/vip_devices.c \
 	jemu-rca/src/hardware/machine_vip.c
 
 RCA_OBJ := $(patsubst %.c, build/rca/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
@@ -109,4 +112,5 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	jemu-rca/include/rca.h \
 	jemu-rca/src/cpu/cdp1802.h \
 	jemu-rca/src/vga/cdp1861.h \
+	jemu-rca/src/devices/vip_devices.h \
 	jemu-rca/src/hardware/vip.h

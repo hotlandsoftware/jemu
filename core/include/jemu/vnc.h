@@ -8,6 +8,8 @@ typedef struct JemuVncServer JemuVncServer;
  * fb_w/fb_h: framebuffer dimensions in pixels                */
 JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h);
 void           jemu_vnc_destroy(JemuVncServer *vnc);
+void           jemu_vnc_set_colors(JemuVncServer *vnc,
+                                   uint32_t fg_rgb, uint32_t bg_rgb);
 
 /* Called whenever the guest's display changes.
  * vram: 1 byte/pixel (0=black, non-zero=white), vw*vh bytes  */

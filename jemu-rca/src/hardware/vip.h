@@ -29,7 +29,6 @@ typedef struct RcaVipState {
 
     /* Simple front-panel inputs used by VIP loaders/monitors. */
     bool     ef2_down;
-    bool     ef3_down;
 } RcaVipState;
 
 /* ── RCA display abstraction (mirrors chip8's Chip8Display) ──────────────── */

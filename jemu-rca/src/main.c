@@ -1,5 +1,6 @@
 #include "rca.h"
 #include "hardware/vip.h"
+#include "devices/vip_devices.h"
 #include "jemu/jemu.h"
 #include "jemu/args.h"
 #include <SDL2/SDL.h>
@@ -35,8 +36,10 @@ static const JemuArgsDef def = {
         "  -rom FILE        Load a ROM/blob using content-based address detection, or 0x0000\n"
         "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"
         "  -start ADDR      Start CDP1802 execution at ADDR\n"
+        "  -device NAME     Attach device      (use -device ? to list)\n"
         "\nExamples:\n"
         "  ./bin/jemu-rca -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
+        "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
@@ -120,6 +123,7 @@ int main(int argc, char *argv[]) {
         .machine       = RCA_MACHINE_COSMAC_VIP,
         .cpu           = RCA_CPU_CDP1802,
         .vga           = RCA_VGA_CDP1861,
+        .keyboard      = RCA_KEYBOARD_VP601,
         .display_type  = JEMU_DISPLAY_SDL,
         .display_scale = 4,
     };
@@ -143,6 +147,18 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(rem[i], "-start") == 0 && i + 1 < nrem) {
             cfg.start_addr = (uint16_t)strtoul(rem[++i], NULL, 0);
             cfg.has_start_addr = true;
+        } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
+            RcaKeyboardType dev;
+            const char *v = rem[++i];
+            if (strcmp(v, "?") == 0 || strcmp(v, "help") == 0) {
+                rca_device_list_print();
+                return 0;
+            }
+            if (!rca_device_parse(v, &dev)) {
+                fprintf(stderr, "jemu-rca: unknown device '%s' (try -device ?)\n", v);
+                return 1;
+            }
+            rca_device_attach(&cfg, dev);
         } else {
             fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);
             return 1;

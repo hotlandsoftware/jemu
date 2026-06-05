@@ -19,6 +19,8 @@ struct JemuVncServer {
     bool            running;
     uint8_t         keys[16];    /* CHIP-8 key state from VNC clients */
     uint32_t        queued_keysym;
+    uint32_t        fg_rgb;
+    uint32_t        bg_rgb;
 };
 
 /* X11 keysyms matching the SDL/GTK CHIP-8 keypad layout:
@@ -48,25 +50,39 @@ static bool sendall(int fd, const void *buf, size_t n) {
 
 /* ── Per-connection pixel format ─────────────────────────────────────────── */
 
-typedef struct { int bytes_pp; bool big_endian; uint32_t white; } PixFmt;
+typedef struct {
+    int bytes_pp;
+    bool big_endian;
+    uint16_t r_max, g_max, b_max;
+    uint8_t r_shift, g_shift, b_shift;
+} PixFmt;
 
 static PixFmt default_fmt(void) {
-    return (PixFmt){ 4, false, 0x00FFFFFF }; /* 32bpp LE, R@16 G@8 B@0 */
+    return (PixFmt){ 4, false, 255, 255, 255, 16, 8, 0 };
 }
 
 static PixFmt parse_pixfmt(const uint8_t *b) {
     /* b[0..15] = PixelFormat (bits-per-pixel at b[0], big-endian at b[2], ...) */
-    uint16_t r_max, g_max, b_max;
-    memcpy(&r_max, b + 4, 2); r_max = ntohs(r_max);
-    memcpy(&g_max, b + 6, 2); g_max = ntohs(g_max);
-    memcpy(&b_max, b + 8, 2); b_max = ntohs(b_max);
     PixFmt f;
     f.bytes_pp   = b[0] / 8; if (f.bytes_pp < 1) f.bytes_pp = 4;
     f.big_endian = (b[2] != 0);
-    f.white = ((uint32_t)r_max << b[10]) |
-              ((uint32_t)g_max << b[11]) |
-              ((uint32_t)b_max << b[12]);
+    memcpy(&f.r_max, b + 4, 2); f.r_max = ntohs(f.r_max);
+    memcpy(&f.g_max, b + 6, 2); f.g_max = ntohs(f.g_max);
+    memcpy(&f.b_max, b + 8, 2); f.b_max = ntohs(f.b_max);
+    f.r_shift = b[10];
+    f.g_shift = b[11];
+    f.b_shift = b[12];
     return f;
+}
+
+static uint32_t pack_rgb(const PixFmt *fmt, uint32_t rgb) {
+    uint32_t r = (rgb >> 16) & 0xFFu;
+    uint32_t g = (rgb >> 8) & 0xFFu;
+    uint32_t b = rgb & 0xFFu;
+    r = (r * fmt->r_max + 127u) / 255u;
+    g = (g * fmt->g_max + 127u) / 255u;
+    b = (b * fmt->b_max + 127u) / 255u;
+    return (r << fmt->r_shift) | (g << fmt->g_shift) | (b << fmt->b_shift);
 }
 
 static void write_pixel(uint8_t *dst, uint32_t val, int bpp, bool be) {
@@ -118,14 +134,19 @@ static bool vnc_send_update(JemuVncServer *vnc, int fd, const PixFmt *fmt) {
     pthread_mutex_unlock(&vnc->lock);
 
     size_t out_sz = (size_t)(npix * fmt->bytes_pp);
-    uint8_t *out  = calloc(out_sz, 1); /* black by default */
+    uint8_t *out  = malloc(out_sz);
     if (!out) { free(vsnap); return false; }
+
+    uint32_t fg = pack_rgb(fmt, vnc->fg_rgb);
+    uint32_t bg = pack_rgb(fmt, vnc->bg_rgb);
+    for (int i = 0; i < npix; i++)
+        write_pixel(out + i * fmt->bytes_pp, bg, fmt->bytes_pp, fmt->big_endian);
 
     if (vsnap) {
         for (int y = 0; y < vnc->fb_h; y++) {
             for (int x = 0; x < vnc->fb_w; x++) {
                 int sx = x * vw / vnc->fb_w, sy = y * vh / vnc->fb_h;
-                uint32_t px = vsnap[sy * vw + sx] ? fmt->white : 0;
+                uint32_t px = vsnap[sy * vw + sx] ? fg : bg;
                 write_pixel(out + (y * vnc->fb_w + x) * fmt->bytes_pp,
                             px, fmt->bytes_pp, fmt->big_endian);
             }
@@ -249,11 +270,21 @@ JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h) {
     JemuVncServer *vnc = calloc(1, sizeof(*vnc));
     vnc->listen_fd = lfd;
     vnc->fb_w = fb_w; vnc->fb_h = fb_h;
+    vnc->fg_rgb = 0xFFFFFFu;
+    vnc->bg_rgb = 0x000000u;
     vnc->running = true;
     pthread_mutex_init(&vnc->lock, NULL);
     pthread_create(&vnc->thread, NULL, vnc_thread, vnc);
     printf("vnc: listening on %s:%d (display :%d)\n", host, port, port - 5900);
     return vnc;
+}
+
+void jemu_vnc_set_colors(JemuVncServer *vnc, uint32_t fg_rgb, uint32_t bg_rgb) {
+    if (!vnc) return;
+    pthread_mutex_lock(&vnc->lock);
+    vnc->fg_rgb = fg_rgb & 0xFFFFFFu;
+    vnc->bg_rgb = bg_rgb & 0xFFFFFFu;
+    pthread_mutex_unlock(&vnc->lock);
 }
 
 void jemu_vnc_destroy(JemuVncServer *vnc) {

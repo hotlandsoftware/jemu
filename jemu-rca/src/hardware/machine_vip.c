@@ -1,4 +1,5 @@
 #include "vip.h"
+#include "devices/vip_devices.h"
 #include "jemu/jemu.h"
 #include "jemu/memory.h"
 #include <SDL2/SDL.h>
@@ -22,6 +23,10 @@ static const char *cpu_state_name(Cdp1802CycleState state) {
 
 static uint8_t mem8(const RcaVipState *s, uint16_t addr) {
     return s->mem[addr & (VIP_MEM_SIZE - 1u)];
+}
+
+static bool vip_ascii_pending(const RcaVipState *s) {
+    return rca_vip_has_vp601(s->cfg) && s->ascii_key >= 0;
 }
 
 static void vip_dump_state(const RcaVipState *s, const char *reason) {
@@ -59,8 +64,9 @@ static void vip_dump_state(const RcaVipState *s, const char *reason) {
     fprintf(stderr, "pixie: display_on=%d line=%u mcycle=%u display_addr=%u int_fired=%d draw=%d vram_on=%u\n",
             s->vdc.display_on, s->vdc.line_counter, s->vdc.mcycle,
             s->vdc.display_addr, s->vdc.int_fired, s->draw_flag, vram_on);
-    fprintf(stderr, "input: key_down=%d ascii_key=%d ef2_down=%d ef3_down=%d\n",
-            s->key_down, s->ascii_key, s->ef2_down, s->ef3_down);
+    fprintf(stderr, "input: keyboard=%s key_down=%d ascii_key=%d ef2_down=%d\n",
+            s->cfg ? rca_vip_keyboard_name(s->cfg->keyboard) : "unknown",
+            s->key_down, s->ascii_key, s->ef2_down);
 
     fprintf(stderr, "roms:\n");
     if (s->cfg) {
@@ -149,13 +155,19 @@ static uint8_t vip_io_in(uint8_t port, void *ud) {
          * value off the bus (0x0-0xF, or 0xFF if no key is pressed).
          */
         cdp1861_set_display(&s->vdc, true);
+        if (!rca_vip_has_keypad(s->cfg))
+            return 0xFF;
         return (s->key_down >= 0) ? (uint8_t)s->key_down : 0xFF;
     }
     if (port == 3) {
+        /* IN 3: ASCII keyboard (for BASIC/text programs).
+         * EF4 is the active-low strobe; reading the port consumes the key. */
+        if (!rca_vip_has_vp601(s->cfg))
+            return 0xFF;
         if (s->ascii_key >= 0) {
             uint8_t key = (uint8_t)s->ascii_key;
             s->ascii_key = -1;
-            s->cpu.EF[3] = (s->key_down < 0);
+            s->cpu.EF[3] = true;  /* EF4 deasserted: no more key pending */
             return key;
         }
         return 0xFF;
@@ -212,7 +224,9 @@ static void vip_step_instruction(RcaVipState *s) {
     uint64_t start = s->cpu.insn_count;
     for (int i = 0; i < 1024 && s->cpu.insn_count == start; i++) {
         s->cpu.EF[1] = !s->ef2_down;
-        s->cpu.EF[2] = !s->ef3_down;
+        s->cpu.EF[2] = !rca_vip_has_vp601(s->cfg) || s->ascii_key < 0;
+        s->cpu.EF[3] = !vip_ascii_pending(s) &&
+                       (!rca_vip_has_keypad(s->cfg) || s->key_down < 0);
         cdp1802_step(&s->cpu);
     }
 }
@@ -234,10 +248,12 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->monitor = jemu_monitor_create();
 
     cdp1861_init(&s->vdc, vip_dma_out, s);
-    if (cfg->vnc_addr)
+    if (cfg->vnc_addr) {
         s->vnc = jemu_vnc_create(cfg->vnc_addr,
                                  CDP1861_DISPLAY_W * cfg->display_scale,
                                  CDP1861_DISPLAY_H * cfg->display_scale);
+        jemu_vnc_set_colors(s->vnc, 0xFFFFFFu, 0x100080u);
+    }
 
     s->key_down = -1;
     s->ascii_key = -1;
@@ -265,7 +281,6 @@ void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
     s->key_down  = -1;
     s->ascii_key = -1;
     s->ef2_down  = false;
-    s->ef3_down  = false;
     memset(s->keys, 0, sizeof(s->keys));
 
     JemuMemory tmp = {.data = s->mem, .size = VIP_MEM_SIZE};
@@ -281,58 +296,6 @@ void rca_vip_destroy(RcaVipState *s) {
     jemu_monitor_destroy(s->monitor);
     jemu_vnc_destroy(s->vnc);
     free(s);
-}
-
-/* ── Keyboard layout: COSMAC VIP hex keypad ──────────────────────────────── */
-/*
- *  Keypad  Keyboard
- *  1 2 3 C   1 2 3 4
- *  4 5 6 D   Q W E R
- *  7 8 9 E   A S D F
- *  A 0 B F   Z X C V
- */
-static const SDL_Keycode key_map[16] = {
-    SDLK_x, SDLK_1, SDLK_2, SDLK_3,
-    SDLK_q, SDLK_w, SDLK_e, SDLK_a,
-    SDLK_s, SDLK_d, SDLK_z, SDLK_c,
-    SDLK_4, SDLK_r, SDLK_f, SDLK_v,
-};
-
-static int sdl_key_to_ascii(SDL_Keycode sym, SDL_Keymod mod) {
-    bool shift = (mod & KMOD_SHIFT) != 0;
-
-    if (sym >= SDLK_a && sym <= SDLK_z)
-        return (int)(shift ? ('A' + (sym - SDLK_a)) : ('a' + (sym - SDLK_a)));
-    if (sym >= SDLK_0 && sym <= SDLK_9) {
-        static const char shifted[] = ")!@#$%^&*(";
-        return shift ? shifted[sym - SDLK_0] : (int)('0' + (sym - SDLK_0));
-    }
-    if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER) return '\r';
-    if (sym == SDLK_BACKSPACE) return '\b';
-    if (sym == SDLK_ESCAPE) return 0x1B;
-    if (sym == SDLK_SPACE) return ' ';
-
-    switch (sym) {
-    case SDLK_MINUS:        return shift ? '_' : '-';
-    case SDLK_EQUALS:       return shift ? '+' : '=';
-    case SDLK_LEFTBRACKET:  return shift ? '{' : '[';
-    case SDLK_RIGHTBRACKET: return shift ? '}' : ']';
-    case SDLK_BACKSLASH:    return shift ? '|' : '\\';
-    case SDLK_SEMICOLON:    return shift ? ':' : ';';
-    case SDLK_QUOTE:        return shift ? '"' : '\'';
-    case SDLK_COMMA:        return shift ? '<' : ',';
-    case SDLK_PERIOD:       return shift ? '>' : '.';
-    case SDLK_SLASH:        return shift ? '?' : '/';
-    default:                return -1;
-    }
-}
-
-static int vnc_keysym_to_ascii(uint32_t sym) {
-    if (sym >= 0x20 && sym <= 0x7E) return (int)sym;
-    if (sym == 0xFF0D) return '\r';
-    if (sym == 0xFF08) return '\b';
-    if (sym == 0xFF1B) return 0x1B;
-    return -1;
 }
 
 /* ── SDL run loop ─────────────────────────────────────────────────────────── */
@@ -365,6 +328,8 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
     /* SDL2 run loop */
     const Uint32 frame_ms = 1000 / 60;
     jemu_monitor_start(s->monitor);
+    if (rca_vip_has_vp601(cfg))
+        SDL_StartTextInput();
 
     bool quit = false;
     while (!quit) {
@@ -374,32 +339,39 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) { quit = true; break; }
+            if (ev.type == SDL_TEXTINPUT && rca_vip_has_vp601(cfg)) {
+                unsigned char ch = (unsigned char)ev.text.text[0];
+                if (ch >= 'a' && ch <= 'z')
+                    ch = (unsigned char)(ch - 32);
+                if (ch >= 0x20 && ch <= 0x7E)
+                    s->ascii_key = ch;
+                continue;
+            }
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
                 quit = true; break;
             }
             if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
                 bool down = (ev.type == SDL_KEYDOWN);
+                /* TAB acts as the VIP front-panel INPUT button (EF2). */
                 if (ev.key.keysym.sym == SDLK_TAB)
                     s->ef2_down = down;
-                if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER)
-                    s->ef3_down = down;
 
-                if (down) {
-                    int ascii = sdl_key_to_ascii(ev.key.keysym.sym, ev.key.keysym.mod);
+                if (down && rca_vip_has_vp601(cfg)) {
+                    int ascii = rca_vp601_sdl_key_to_ascii(ev.key.keysym.sym, ev.key.keysym.mod);
                     if (ascii >= 0)
                         s->ascii_key = ascii;
                 }
 
-                for (int k = 0; k < 16; k++) {
-                    if (ev.key.keysym.sym != key_map[k])
-                        continue;
-
-                    if (down) {
-                        s->keys[k] = 1;
-                        s->key_down = k;
-                    } else {
-                        s->keys[k] = 0;
-                        if (s->key_down == k) s->key_down = -1;
+                if (rca_vip_has_keypad(cfg)) {
+                    int k = rca_vip_keypad_keycode_to_hex(ev.key.keysym.sym);
+                    if (k >= 0) {
+                        if (down) {
+                            s->keys[k] = 1;
+                            s->key_down = k;
+                        } else {
+                            s->keys[k] = 0;
+                            if (s->key_down == k) s->key_down = -1;
+                        }
                     }
                 }
             }
@@ -409,16 +381,19 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         /* Sync any held key to key_down */
         uint8_t vnc_keys[16];
         jemu_vnc_get_keys(s->vnc, vnc_keys);
-        int vnc_ascii = vnc_keysym_to_ascii(jemu_vnc_pop_keysym(s->vnc));
-        if (vnc_ascii >= 0)
+        int vnc_ascii = rca_vp601_vnc_keysym_to_ascii(jemu_vnc_pop_keysym(s->vnc));
+        if (vnc_ascii >= 0 && rca_vip_has_vp601(cfg))
             s->ascii_key = vnc_ascii;
 
         s->key_down = -1;
-        for (int k = 0; k < 16; k++)
-            if (s->keys[k] || vnc_keys[k]) { s->key_down = k; break; }
+        if (rca_vip_has_keypad(cfg)) {
+            for (int k = 0; k < 16; k++)
+                if (s->keys[k] || vnc_keys[k]) { s->key_down = k; break; }
+        }
 
-        /* VIP keypad EF4 is active-low: released = high, pressed = low. */
-        s->cpu.EF[3] = (s->key_down < 0 && s->ascii_key < 0);
+        /* EF4 is active-low for both VIP hex keypad and VP601 data-ready. */
+        s->cpu.EF[3] = !vip_ascii_pending(s) &&
+                       (!rca_vip_has_keypad(cfg) || s->key_down < 0);
 
         JemuMonCmd cmd;
         while ((cmd = jemu_monitor_poll(s->monitor)) != JEMU_MON_NONE) {
@@ -437,7 +412,9 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         /* ── Execute one NTSC frame worth of machine cycles ── */
         for (int i = 0; i < CDP1861_MCYCLES_PER_FRAME; i++) {
             s->cpu.EF[1] = !s->ef2_down;
-            s->cpu.EF[2] = !s->ef3_down;
+            s->cpu.EF[2] = !rca_vip_has_vp601(cfg) || s->ascii_key < 0;
+            s->cpu.EF[3] = !vip_ascii_pending(s) &&
+                           (!rca_vip_has_keypad(cfg) || s->key_down < 0);
             cdp1802_step(&s->cpu);
         }
 
@@ -456,6 +433,8 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
            (unsigned long long)s->cpu.cycle_count,
            (unsigned long long)s->cpu.insn_count);
 
+    if (rca_vip_has_vp601(cfg))
+        SDL_StopTextInput();
     jemu_monitor_stop(s->monitor);
     rca_display_destroy(display);
 }
