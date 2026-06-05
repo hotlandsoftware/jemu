@@ -15,5 +15,5 @@ make GTK=1 # for GTK support
 
 # Supported CPU/Machines
 | CPU | Machines | Executable | Status | Notes |
-| -------- | -------- | -------- | -------- |
+| -------- | -------- | -------- | -------- | -------- |
 | CHIP-8 | CHIP-8 | ``jemu-chip8`` | Working | no audio support yet |
