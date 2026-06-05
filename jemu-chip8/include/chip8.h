@@ -86,15 +86,21 @@ typedef struct Chip8State {
     uint64_t     tb_misses;
 } Chip8State;
 
+typedef enum {
+    CHIP8_MACHINE_GENERIC, /* default: modern/mixed quirks */
+    CHIP8_MACHINE_VIP,     /* COSMAC VIP (stub) */
+} Chip8MachineType;
+
 typedef struct Chip8Config {
-    const char *rom_path;
-    uint32_t    mem_size;
-    int         cpu_hz;
-    bool        vga_enabled;
-    int         vga_scale;
-    bool        quirk_shift;
-    bool        quirk_jump;
-    const char *vnc_addr;  /* NULL = disabled, e.g. ":0" or "127.0.0.1:1" */
+    const char      *rom_path;
+    uint32_t         mem_size;
+    int              cpu_hz;
+    bool             vga_enabled;
+    int              vga_scale;
+    bool             quirk_shift;
+    bool             quirk_jump;
+    const char      *vnc_addr;  /* NULL = disabled, e.g. ":0" or "127.0.0.1:1" */
+    Chip8MachineType machine;
 } Chip8Config;
 
 /* ── Display ──────────────────────────────────────────────────────────────── */

@@ -13,6 +13,7 @@ static void usage(const char *prog) {
         "Usage: %s [options] <rom.ch8>\n"
         "\n"
         "Options:\n"
+        "  -M TYPE    Machine type (use -M ? to list)\n"
         "  -m SIZE    Memory size (default: 4K)\n"
         "  -cpu TYPE  CPU variant (use -cpu ? to list)\n"
         "  -vga TYPE  Display adapter (use -vga ? to list)\n"
@@ -43,12 +44,28 @@ int main(int argc, char *argv[]) {
         .quirk_shift = false,
         .quirk_jump  = false,
         .vnc_addr    = NULL,
+        .machine     = CHIP8_MACHINE_GENERIC,
     };
     bool vga_explicit = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0) {
             usage(argv[0]); return 0;
+
+        } else if (strcmp(argv[i], "-M") == 0 && i + 1 < argc) {
+            const char *mach = argv[++i];
+            if (strcmp(mach, "?") == 0 || strcmp(mach, "help") == 0) {
+                printf("Available machines:\n"
+                       "  generic    Generic CHIP-8 (default)\n"
+                       "  vip        COSMAC VIP\n");
+                return 0;
+            }
+            if (strcmp(mach, "generic") == 0)       cfg.machine = CHIP8_MACHINE_GENERIC;
+            else if (strcmp(mach, "vip") == 0)      cfg.machine = CHIP8_MACHINE_VIP;
+            else {
+                fprintf(stderr, "jemu-chip8: unknown machine '%s' (try -M ?)\n", mach);
+                return 1;
+            }
 
         } else if (strcmp(argv[i], "-m") == 0 && i + 1 < argc) {
             cfg.mem_size = parse_size(argv[++i]);
