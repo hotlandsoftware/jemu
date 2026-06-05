@@ -6,6 +6,7 @@
 typedef enum {
     RCA_MACHINE_GENERIC,
     RCA_MACHINE_COSMAC_VIP,
+    RCA_MACHINE_DESTROYER,
 } RcaMachineType;
 
 typedef enum {
@@ -16,6 +17,7 @@ typedef enum {
 typedef enum {
     RCA_VGA_NONE,
     RCA_VGA_CDP1861,
+    RCA_VGA_CDP1869,
 } RcaVgaType;
 
 typedef enum {

@@ -4,9 +4,17 @@
 /* ── Memory helpers ──────────────────────────────────────────────────────── */
 
 static inline uint8_t mr(Cdp1802 *c, uint16_t a) {
+    c->memory_addr = a;
+    if (c->mem_read)
+        return c->mem_read(a, c->io_ud);
     return c->mem[a & c->mem_mask];
 }
 static inline void mw(Cdp1802 *c, uint16_t a, uint8_t v) {
+    c->memory_addr = a;
+    if (c->mem_write) {
+        c->mem_write(a, v, c->io_ud);
+        return;
+    }
     c->mem[a & c->mem_mask] = v;
 }
 
@@ -253,8 +261,10 @@ void cdp1802_step(Cdp1802 *c) {
         /* 0x61-0x67  OUT N (read M[R[X]], post-increment R[X], send to port) */
         case 0x61: case 0x62: case 0x63: case 0x64:
         case 0x65: case 0x66: case 0x67: {
-            uint8_t v = mr(c, c->R[c->X]);
+            uint16_t a = c->R[c->X];
+            uint8_t v = mr(c, a);
             c->R[c->X]++;
+            c->memory_addr = a;
             if (c->io_out) c->io_out(c->N, v, c->io_ud);
             break;
         }

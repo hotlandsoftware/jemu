@@ -1,5 +1,6 @@
 #include "rca.h"
 #include "hardware/vip.h"
+#include "hardware/destroyer.h"
 #include "devices/vip_devices.h"
 #include "jemu/jemu.h"
 #include "jemu/args.h"
@@ -13,6 +14,7 @@
 
 static const JemuDevDesc machines[] = {
     {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
+    {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
     {"generic",    "Generic RCA COSMAC (stub, not yet implemented)"},
 };
 static const JemuDevDesc cpus[] = {
@@ -20,13 +22,14 @@ static const JemuDevDesc cpus[] = {
 };
 static const JemuDevDesc vgas[] = {
     {"cdp1861", "RCA CDP1861 Pixie (64×128 px, NTSC 60 Hz, DMA-driven)"},
+    {"cdp1869", "RCA CDP1869/1870 VIS tile display"},
     {"none",    "No video output"},
 };
 static const JemuArgsDef def = {
     .prog         = "jemu-rca",
-    .machines     = machines, .n_machines = 2,
+    .machines     = machines, .n_machines = 3,
     .cpus         = cpus,     .n_cpus     = 1,
-    .vgas         = vgas,     .n_vgas     = 2,
+    .vgas         = vgas,     .n_vgas     = 3,
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
                   | JEMU_DISP_F(JEMU_DISPLAY_NONE),
     .vnc_support  = true,
@@ -42,6 +45,7 @@ static const JemuArgsDef def = {
         "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
+        "  ./bin/jemu-rca -M destroyer -rom 0x0000:roms/destroyer/des\\ a\\ 2.ic4 -rom 0x0800:roms/destroyer/des\\ b\\ 2.ic5 -rom 0x1000:roms/destroyer/des\\ c\\ 2.ic6 -rom 0x1800:roms/destroyer/des\\ d\\ 2.ic7\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
 };
 
@@ -176,12 +180,16 @@ int main(int argc, char *argv[]) {
 
     if (args.machine) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
+        else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
     }
     if (args.vga) {
         if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;
+        else if (strcmp(args.vga, "cdp1869") == 0) cfg.vga = RCA_VGA_CDP1869;
         else if (strcmp(args.vga, "none")    == 0) cfg.vga = RCA_VGA_NONE;
     }
+    if (cfg.machine == RCA_MACHINE_DESTROYER)
+        cfg.vga = RCA_VGA_CDP1869;
 
     if (cfg.n_roms == 0) {
         fprintf(stderr, "jemu-rca: no ROM specified — use positional arg or -rom ADDR:FILE\n");
@@ -204,14 +212,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    RcaVipState *s = rca_vip_create(&cfg);
-    if (!s) {
-        if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
-        return 1;
+    if (cfg.machine == RCA_MACHINE_DESTROYER) {
+        RcaDestroyerState *s = rca_destroyer_create(&cfg);
+        if (!s) {
+            if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+            return 1;
+        }
+        rca_destroyer_run(s, &cfg);
+        rca_destroyer_destroy(s);
+    } else {
+        RcaVipState *s = rca_vip_create(&cfg);
+        if (!s) {
+            if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+            return 1;
+        }
+        rca_machine_run(s, &cfg);
+        rca_vip_destroy(s);
     }
-
-    rca_machine_run(s, &cfg);
-    rca_vip_destroy(s);
 
     if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
     return 0;

@@ -70,10 +70,13 @@ typedef struct Cdp1802 {
     /* Flat memory (caller-owned) */
     uint8_t *mem;
     uint32_t mem_mask;   /* typically 0xFFFF */
+    uint16_t memory_addr; /* most recent memory address on the bus */
 
     /* I/O callbacks (all optional) */
     uint8_t (*io_in)(uint8_t port, void *ud);
     void    (*io_out)(uint8_t port, uint8_t val, void *ud);
+    uint8_t (*mem_read)(uint16_t addr, void *ud);
+    void    (*mem_write)(uint16_t addr, uint8_t val, void *ud);
     void    (*q_out)(uint8_t q, void *ud);
     void    (*on_sync)(void *ud);  /* called once per machine cycle */
     void    (*panic)(struct Cdp1802 *cpu, const char *reason, void *ud);

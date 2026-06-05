@@ -57,9 +57,11 @@ RCA_SRC := \
 	jemu-rca/src/main.c \
 	jemu-rca/src/cpu/cdp1802.c \
 	jemu-rca/src/vga/cdp1861.c \
+	jemu-rca/src/vga/cdp1869.c \
 	jemu-rca/src/vga/display_sdl.c \
 	jemu-rca/src/devices/vip_devices.c \
-	jemu-rca/src/hardware/machine_vip.c
+	jemu-rca/src/hardware/machine_vip.c \
+	jemu-rca/src/hardware/machine_destroyer.c
 
 RCA_OBJ := $(patsubst %.c, build/rca/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
@@ -112,5 +114,7 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	jemu-rca/include/rca.h \
 	jemu-rca/src/cpu/cdp1802.h \
 	jemu-rca/src/vga/cdp1861.h \
+	jemu-rca/src/vga/cdp1869.h \
 	jemu-rca/src/devices/vip_devices.h \
-	jemu-rca/src/hardware/vip.h
+	jemu-rca/src/hardware/vip.h \
+	jemu-rca/src/hardware/destroyer.h

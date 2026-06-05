@@ -9,6 +9,8 @@ typedef struct {
     SDL_Renderer *renderer;
     SDL_Texture  *texture;
     int           scale;
+    const uint32_t *palette;
+    int           n_colors;
 } VipSdlCtx;
 
 /* Match Emma02's COSMAC VIP presentation: white pixels on deep blue. */
@@ -22,7 +24,13 @@ static void sdl_render(void *ctx, const uint8_t *vram, int w, int h) {
     uint32_t *px = pixels;
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w; x++)
-            px[y * (pitch / 4) + x] = vram[y * w + x] ? PIXEL_ON : PIXEL_OFF;
+            if (c->palette && c->n_colors > 0) {
+                uint8_t idx = vram[y * w + x];
+                if (idx >= c->n_colors) idx = (uint8_t)(c->n_colors - 1);
+                px[y * (pitch / 4) + x] = c->palette[idx];
+            } else {
+                px[y * (pitch / 4) + x] = vram[y * w + x] ? PIXEL_ON : PIXEL_OFF;
+            }
     SDL_UnlockTexture(c->texture);
     SDL_RenderClear(c->renderer);
     SDL_RenderCopy(c->renderer, c->texture, NULL, NULL);
@@ -45,7 +53,7 @@ RcaDisplay *rca_display_sdl_create(int scale) {
     VipSdlCtx *c = calloc(1, sizeof(*c));
     c->scale  = scale;
     c->window = SDL_CreateWindow(
-        "JEMU — COSMAC VIP - Pixie",
+        "JEMU",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         CDP1861_DISPLAY_W * scale, CDP1861_DISPLAY_H * scale,
         SDL_WINDOW_SHOWN);
@@ -79,6 +87,49 @@ RcaDisplay *rca_display_sdl_create(int scale) {
     d->destroy = sdl_destroy;
     d->run     = NULL;
     d->ctx     = c;
+    return d;
+}
+
+RcaDisplay *rca_display_sdl_create_indexed(const char *title, int w, int h,
+                                           int scale,
+                                           const uint32_t *palette,
+                                           int n_colors) {
+    (void)title;
+    if (scale <= 0) scale = VIP_DEFAULT_SCALE;
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) return NULL;
+
+    VipSdlCtx *c = calloc(1, sizeof(*c));
+    c->scale = scale;
+    c->palette = palette;
+    c->n_colors = n_colors;
+    c->window = SDL_CreateWindow("JEMU", SDL_WINDOWPOS_CENTERED,
+                                 SDL_WINDOWPOS_CENTERED,
+                                 w * scale, h * scale, SDL_WINDOW_SHOWN);
+    if (!c->window) { free(c); SDL_QuitSubSystem(SDL_INIT_VIDEO); return NULL; }
+
+    c->renderer = SDL_CreateRenderer(c->window, -1,
+                      SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!c->renderer) { SDL_DestroyWindow(c->window); free(c); return NULL; }
+
+    SDL_RenderSetLogicalSize(c->renderer, w * scale, h * scale);
+    c->texture = SDL_CreateTexture(c->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                   SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!c->texture) {
+        SDL_DestroyRenderer(c->renderer);
+        SDL_DestroyWindow(c->window);
+        free(c);
+        return NULL;
+    }
+
+    SDL_SetRenderDrawColor(c->renderer, 0, 0, 0, 255);
+    SDL_RenderClear(c->renderer);
+    SDL_RenderPresent(c->renderer);
+
+    RcaDisplay *d = calloc(1, sizeof(*d));
+    d->render = sdl_render;
+    d->destroy = sdl_destroy;
+    d->run = NULL;
+    d->ctx = c;
     return d;
 }
 

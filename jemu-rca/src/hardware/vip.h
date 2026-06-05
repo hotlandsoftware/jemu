@@ -51,6 +51,10 @@ void         rca_vip_destroy(RcaVipState *s);
 void         rca_machine_run(RcaVipState *s, const RcaConfig *cfg);
 
 RcaDisplay  *rca_display_sdl_create(int scale);
+RcaDisplay  *rca_display_sdl_create_indexed(const char *title, int w, int h,
+                                            int scale,
+                                            const uint32_t *palette,
+                                            int n_colors);
 RcaDisplay  *rca_display_none_create(void);
 
 static inline void rca_display_render(RcaDisplay *d, const uint8_t *vram, int w, int h) {
