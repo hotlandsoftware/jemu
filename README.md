@@ -9,7 +9,8 @@ JEMU is a generic emulator designed to emulate as many machines, hardware, and p
 JEMU is still in an alpha state. It will likely never be "complete" as there will always be more machines and hardware for it to emulate.
 
 # Build command
-```make
+```
+make
 make GTK=1 # for GTK support
 ```
 
