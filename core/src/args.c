@@ -32,7 +32,9 @@ static void print_usage(const JemuArgsDef *def) {
     printf("  %-14s Window scale factor\n", "-scale N");
     if (def->vnc_support)
         printf("  %-14s VNC server (use -vnc ? for address format)\n", "-vnc ADDR");
-    printf("  %-14s Show this help\n", "-h");
+    printf("  %-14s Show this help\n", "-h, -help");
+    if (def->extra_help && def->extra_help[0])
+        printf("%s", def->extra_help);
 }
 
 static void list_devices(const char *kind, const JemuDevDesc *devs, int n) {
@@ -96,7 +98,8 @@ bool jemu_args_parse(int argc, char **argv,
         const char *a = argv[i];
 
         /* ── Help ── */
-        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
+        if (strcmp(a, "-h") == 0 || strcmp(a, "-help") == 0 ||
+            strcmp(a, "--help") == 0) {
             print_usage(def);
             exit(0);
         }

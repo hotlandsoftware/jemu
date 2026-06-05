@@ -28,7 +28,16 @@ static const JemuArgsDef def = {
     .vgas         = vgas,     .n_vgas     = 2,
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
                   | JEMU_DISP_F(JEMU_DISPLAY_NONE),
-    .vnc_support  = false,
+    .vnc_support  = true,
+    .extra_help =
+        "\nRCA options:\n"
+        "  -rom ADDR:FILE   Load a ROM/blob at address ADDR; may be repeated\n"
+        "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"
+        "  -start ADDR      Start CDP1802 execution at ADDR\n"
+        "\nExamples:\n"
+        "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
+        "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
+        "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
 };
 
 /* ── ROM load helper ─────────────────────────────────────────────────────── */
@@ -98,6 +107,9 @@ int main(int argc, char *argv[]) {
             if (!parse_rom_arg(&cfg, rem[++i])) return 1;
         } else if (strcmp(rem[i], "-load-addr") == 0 && i + 1 < nrem) {
             positional_addr = (uint32_t)strtoul(rem[++i], NULL, 0);
+        } else if (strcmp(rem[i], "-start") == 0 && i + 1 < nrem) {
+            cfg.start_addr = (uint16_t)strtoul(rem[++i], NULL, 0);
+            cfg.has_start_addr = true;
         } else {
             fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);
             return 1;
@@ -111,6 +123,7 @@ int main(int argc, char *argv[]) {
 
     cfg.display_type  = args.display_type;
     cfg.display_scale = args.display_scale;
+    cfg.vnc_addr      = args.vnc_addr;
 
     if (args.machine) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
@@ -126,12 +139,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* VNC with no explicit -display → headless, matching jemu-chip8. */
+    if (cfg.vnc_addr && !args.display_explicit)
+        cfg.display_type = JEMU_DISPLAY_NONE;
+
     if (cfg.machine == RCA_MACHINE_GENERIC) {
         fprintf(stderr, "jemu-rca: generic machine not yet implemented\n");
         return 1;
     }
 
-    if (cfg.display_type == JEMU_DISPLAY_SDL) {
+    if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) {
         if (SDL_Init(0) < 0) {
             fprintf(stderr, "jemu-rca: SDL_Init failed: %s\n", SDL_GetError());
             return 1;
@@ -140,13 +157,13 @@ int main(int argc, char *argv[]) {
 
     RcaVipState *s = rca_vip_create(&cfg);
     if (!s) {
-        if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
+        if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
         return 1;
     }
 
     rca_machine_run(s, &cfg);
     rca_vip_destroy(s);
 
-    if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
+    if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
     return 0;
 }

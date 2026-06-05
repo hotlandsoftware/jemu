@@ -9,30 +9,46 @@ void cdp1861_init(Cdp1861 *vdc,
 }
 
 void cdp1861_reset(Cdp1861 *vdc) {
-    vdc->line_counter  = 0;
-    vdc->mcycle        = 0;
-    vdc->display_addr  = 0;
-    vdc->display_on    = false;
+    vdc->line_counter = 0;
+    vdc->mcycle       = 0;
+    vdc->display_addr = 0;
+    vdc->display_on   = false;
+    vdc->int_fired    = false;
 }
 
 void cdp1861_sync(Cdp1861 *vdc, Cdp1802 *cpu) {
+    uint16_t lc = vdc->line_counter;
+    uint8_t  mc = vdc->mcycle;
+
+    /*
+     * EF1 (EFX pin, active-low): driven LOW (EF=0) during the blanking
+     * windows near frame boundaries; HIGH (EF=1) during active display.
+     * This is updated every machine cycle.
+     */
+    {
+        bool blanking = (lc >= 60 && lc <= 63) || (lc >= 188 && lc <= 191);
+        cpu->EF[0] = !blanking;   /* EF1 = 1 active, 0 blanking */
+    }
+
     if (vdc->display_on) {
-        uint16_t lc = vdc->line_counter;
-        uint8_t  mc = vdc->mcycle;
-
-        /* Issue DMA-out request at machine cycle 2 of each active line */
-        if (lc >= CDP1861_FIRST_LINE && lc <= CDP1861_LAST_LINE && mc == 2)
-            cdp1802_request_dma_out(cpu, 8, vdc->dma_out_cb, vdc->dma_out_ud);
-
-        /* Interrupt at start of line 62 (one line before active display begins) */
-        if (lc == 62 && mc == 0)
+        /*
+         * Interrupt at machine cycle 2 of line 62 (one line before active
+         * display). Sets int_fired, which gates DMA for this frame.
+         * int_fired is cleared when display turns off (cdp1861_set_display).
+         */
+        if (lc == 62 && mc == 2) {
             cdp1802_request_irq(cpu);
-
-        /* EF1 (index 0) is the display blanking signal (EFX) */
-        if (mc == 0) {
-            bool efx = (lc >= 60 && lc <= 63) || (lc >= 188 && lc <= 191);
-            cpu->EF[0] = efx;
+            vdc->int_fired = true;
         }
+
+        /*
+         * DMA-out at machine cycle 4 of each active line, but ONLY after the
+         * frame interrupt has fired. This mirrors Emma02's vidInt_ gate —
+         * without it the first DMA fires with an uninitialised R[0].
+         */
+        if (vdc->int_fired &&
+            lc >= CDP1861_FIRST_LINE && lc <= CDP1861_LAST_LINE && mc == 4)
+            cdp1802_request_dma_out(cpu, 8, vdc->dma_out_cb, vdc->dma_out_ud);
     }
 
     if (++vdc->mcycle == CDP1861_MCYCLES_PER_LINE) {

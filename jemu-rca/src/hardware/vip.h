@@ -2,6 +2,8 @@
 #include "cdp1802.h"
 #include "cdp1861.h"
 #include "rca.h"
+#include "jemu/monitor.h"
+#include "jemu/vnc.h"
 #include <stdlib.h>
 
 /* ── COSMAC VIP machine state ────────────────────────────────────────────── */
@@ -12,6 +14,8 @@ typedef struct RcaVipState {
     Cdp1802  cpu;
     Cdp1861  vdc;
     uint8_t  mem[VIP_MEM_SIZE];
+    JemuMonitor *monitor;
+    JemuVncServer *vnc;
 
     /* Pixel framebuffer: 1 byte per pixel (0 or 1), 64 wide × 128 tall */
     uint8_t  vram[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];
@@ -20,6 +24,10 @@ typedef struct RcaVipState {
     /* Hex keypad state */
     uint8_t  keys[16];    /* 1 = pressed */
     int      key_down;    /* most-recent key held, -1 = none */
+
+    /* Simple front-panel inputs used by VIP loaders/monitors. */
+    bool     ef2_down;
+    bool     ef3_down;
 } RcaVipState;
 
 /* ── RCA display abstraction (mirrors chip8's Chip8Display) ──────────────── */

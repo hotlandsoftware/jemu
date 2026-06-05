@@ -30,6 +30,7 @@ typedef struct {
     int                n_vgas;
     unsigned           display_mask;    /* bitfield of supported JemuDisplayType */
     bool               vnc_support;     /* whether -vnc is a valid option */
+    const char        *extra_help;      /* optional binary-specific usage text */
 } JemuArgsDef;
 
 /*
@@ -50,7 +51,7 @@ typedef struct {
 
 /*
  * Parse argc/argv.
- * -h, -M ?, -cpu ?, -vga ?, -display ? all print and exit(0).
+ * -h/-help/--help, -M ?, -cpu ?, -vga ?, -display ? all print and exit(0).
  * Returns false and prints an error message on invalid input.
  */
 bool jemu_args_parse(int argc, char **argv,

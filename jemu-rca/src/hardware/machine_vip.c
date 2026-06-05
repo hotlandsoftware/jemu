@@ -36,25 +36,78 @@ static void vip_sync(void *ud) {
 }
 
 static void vip_q_out(uint8_t q, void *ud) {
-    RcaVipState *s = ud;
-    cdp1861_set_display(&s->vdc, q != 0);
+    /* Q output drives the audio tone generator on COSMAC VIP, not the display.
+     * Audio is not yet implemented; this is a placeholder. */
+    (void)q; (void)ud;
 }
 
 static uint8_t vip_io_in(uint8_t port, void *ud) {
     RcaVipState *s = ud;
     if (port == 1) {
-        /* Return currently pressed key, 0xFF if none */
-        if (s->key_down >= 0) return (uint8_t)s->key_down;
-        return 0xFF;
+        /*
+         * IN 1 on the COSMAC VIP: the SC lines from the 1802 assert the CDP1861
+         * display-enable pin.  The instruction simultaneously reads the hex keypad
+         * value off the bus (0x0-0xF, or 0xFF if no key is pressed).
+         */
+        cdp1861_set_display(&s->vdc, true);
+        return (s->key_down >= 0) ? (uint8_t)s->key_down : 0xFF;
     }
     return 0xFF;
 }
 
 static void vip_io_out(uint8_t port, uint8_t val, void *ud) {
-    (void)port; (void)val; (void)ud;
+    RcaVipState *s = ud;
+    (void)val;
+    if (port == 1) {
+        /* OUT 1 on the COSMAC VIP disables the CDP1861 display. */
+        cdp1861_set_display(&s->vdc, false);
+    }
 }
 
 /* ── Machine lifecycle ───────────────────────────────────────────────────── */
+
+static bool vip_fpb_basic_loaded(const RcaVipState *s) {
+    static const uint8_t marker[] = "BASIC-REL V2.2";
+    return memcmp(&s->mem[0x1025], marker, sizeof(marker) - 1) == 0;
+}
+
+static bool vip_start_addr(const RcaVipState *s, const RcaConfig *cfg,
+                           uint16_t *addr) {
+    if (cfg->has_start_addr) {
+        *addr = cfg->start_addr;
+        return true;
+    }
+
+    if (vip_fpb_basic_loaded(s)) {
+        *addr = 0x1000;
+        return true;
+    }
+
+    return false;
+}
+
+static void vip_apply_start_addr(RcaVipState *s, const RcaConfig *cfg) {
+    uint16_t addr;
+    if (!vip_start_addr(s, cfg, &addr))
+        return;
+
+    s->cpu.X = 0;
+    s->cpu.P = 0;
+    s->cpu.R[0] = addr;
+    s->cpu.state = CDP1802_S_FETCH;
+    s->cpu.exec_left = 0;
+    s->cpu.idle = false;
+    s->cpu.init_pending = false;
+}
+
+static void vip_step_instruction(RcaVipState *s) {
+    uint64_t start = s->cpu.insn_count;
+    for (int i = 0; i < 1024 && s->cpu.insn_count == start; i++) {
+        s->cpu.EF[1] = s->ef2_down;
+        s->cpu.EF[2] = s->ef3_down;
+        cdp1802_step(&s->cpu);
+    }
+}
 
 RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     RcaVipState *s = calloc(1, sizeof(*s));
@@ -67,7 +120,13 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->cpu.io_out  = vip_io_out;
     s->cpu.io_ud   = s;
 
+    s->monitor = jemu_monitor_create();
+
     cdp1861_init(&s->vdc, vip_dma_out, s);
+    if (cfg->vnc_addr)
+        s->vnc = jemu_vnc_create(cfg->vnc_addr,
+                                 CDP1861_DISPLAY_W * cfg->display_scale,
+                                 CDP1861_DISPLAY_H * cfg->display_scale);
 
     s->key_down = -1;
 
@@ -82,6 +141,7 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
         printf("jemu-rca: %zu bytes @ 0x%04X  ← %s\n",
                len, cfg->roms[i].addr, cfg->roms[i].path);
     }
+    vip_apply_start_addr(s, cfg);
     return s;
 }
 
@@ -91,14 +151,21 @@ void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
     memset(s->vram, 0, sizeof(s->vram));
     s->draw_flag = true;
     s->key_down  = -1;
+    s->ef2_down  = false;
+    s->ef3_down  = false;
     memset(s->keys, 0, sizeof(s->keys));
 
     JemuMemory tmp = {.data = s->mem, .size = VIP_MEM_SIZE};
     for (int i = 0; i < cfg->n_roms; i++)
         jemu_mem_load_file(&tmp, cfg->roms[i].addr, cfg->roms[i].path, NULL);
+
+    vip_apply_start_addr(s, cfg);
 }
 
 void rca_vip_destroy(RcaVipState *s) {
+    if (!s) return;
+    jemu_monitor_destroy(s->monitor);
+    jemu_vnc_destroy(s->vnc);
     free(s);
 }
 
@@ -144,6 +211,7 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
 
     /* SDL2 run loop */
     const Uint32 frame_ms = 1000 / 60;
+    jemu_monitor_start(s->monitor);
 
     bool quit = false;
     while (!quit) {
@@ -155,6 +223,13 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
             if (ev.type == SDL_QUIT) { quit = true; break; }
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
                 quit = true; break;
+            }
+            if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
+                bool down = (ev.type == SDL_KEYDOWN);
+                if (ev.key.keysym.sym == SDLK_TAB)
+                    s->ef2_down = down;
+                if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_KP_ENTER)
+                    s->ef3_down = down;
             }
             for (int k = 0; k < 16; k++) {
                 if (ev.key.keysym.sym == key_map[k]) {
@@ -171,20 +246,41 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         if (quit) break;
 
         /* Sync any held key to key_down */
+        uint8_t vnc_keys[16];
+        jemu_vnc_get_keys(s->vnc, vnc_keys);
+
         s->key_down = -1;
         for (int k = 0; k < 16; k++)
-            if (s->keys[k]) { s->key_down = k; break; }
+            if (s->keys[k] || vnc_keys[k]) { s->key_down = k; break; }
 
         /* EF4 = any key pressed */
         s->cpu.EF[3] = (s->key_down >= 0);
 
+        JemuMonCmd cmd;
+        while ((cmd = jemu_monitor_poll(s->monitor)) != JEMU_MON_NONE) {
+            if      (cmd == JEMU_MON_QUIT)  quit = true;
+            else if (cmd == JEMU_MON_RESET) rca_vip_reset(s, cfg);
+            else if (cmd == JEMU_MON_STEP)  vip_step_instruction(s);
+        }
+        if (quit) break;
+
+        if (jemu_monitor_is_paused(s->monitor)) {
+            Uint32 elapsed = SDL_GetTicks() - t0;
+            if (elapsed < frame_ms) SDL_Delay(frame_ms - elapsed);
+            continue;
+        }
+
         /* ── Execute one NTSC frame worth of machine cycles ── */
-        for (int i = 0; i < CDP1861_MCYCLES_PER_FRAME; i++)
+        for (int i = 0; i < CDP1861_MCYCLES_PER_FRAME; i++) {
+            s->cpu.EF[1] = s->ef2_down;
+            s->cpu.EF[2] = s->ef3_down;
             cdp1802_step(&s->cpu);
+        }
 
         /* ── Render ── */
         if (s->draw_flag) {
             rca_display_render(display, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
+            jemu_vnc_update(s->vnc, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
             s->draw_flag = false;
         }
 
@@ -196,5 +292,6 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
            (unsigned long long)s->cpu.cycle_count,
            (unsigned long long)s->cpu.insn_count);
 
+    jemu_monitor_stop(s->monitor);
     rca_display_destroy(display);
 }

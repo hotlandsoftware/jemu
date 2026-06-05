@@ -245,7 +245,7 @@ void cdp1802_step(Cdp1802 *c) {
         /* 0x69-0x6F  INP N (read from port, write to M[R[X]] and D) */
         case 0x69: case 0x6A: case 0x6B: case 0x6C:
         case 0x6D: case 0x6E: case 0x6F: {
-            uint8_t v = c->io_in ? c->io_in(c->N, c->io_ud) : 0xFFu;
+            uint8_t v = c->io_in ? c->io_in(c->N - 8u, c->io_ud) : 0xFFu;
             mw(c, c->R[c->X], v);
             c->D = v;
             break;

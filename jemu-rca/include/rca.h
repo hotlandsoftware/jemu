@@ -33,4 +33,7 @@ typedef struct RcaConfig {
     RcaVgaType      vga;
     JemuDisplayType display_type;
     int             display_scale;
+    const char     *vnc_addr;
+    bool            has_start_addr;
+    uint16_t        start_addr;
 } RcaConfig;

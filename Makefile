@@ -47,7 +47,9 @@ RCA_LDFLAGS := $(SDL2_LIBS) -pthread
 
 RCA_CORE_SRC := \
 	core/src/memory.c \
-	core/src/args.c
+	core/src/args.c \
+	core/src/monitor.c \
+	core/src/vnc.c
 
 RCA_SRC := \
 	jemu-rca/src/main.c \
@@ -95,12 +97,15 @@ $(CHIP8_OBJ): $(CORE_HDRS) \
 	core/include/jemu/memory.h \
 	core/include/jemu/cpu.h \
 	core/include/jemu/device.h \
+	core/include/jemu/monitor.h \
 	core/include/jemu/tcg.h \
 	core/include/jemu/vnc.h \
 	jemu-chip8/include/chip8.h
 
 $(RCA_OBJ): $(CORE_HDRS) \
 	core/include/jemu/memory.h \
+	core/include/jemu/monitor.h \
+	core/include/jemu/vnc.h \
 	jemu-rca/include/rca.h \
 	jemu-rca/src/cpu/cdp1802.h \
 	jemu-rca/src/vga/cdp1861.h \
