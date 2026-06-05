@@ -17,3 +17,6 @@ void           jemu_vnc_update(JemuVncServer *vnc,
 /* Copy the current VNC key state into keys[16] (CHIP-8 layout).
  * Safe to call from any thread.                               */
 void           jemu_vnc_get_keys(JemuVncServer *vnc, uint8_t keys[16]);
+
+/* Return one queued RFB keysym, or 0 if no key event is waiting. */
+uint32_t       jemu_vnc_pop_keysym(JemuVncServer *vnc);

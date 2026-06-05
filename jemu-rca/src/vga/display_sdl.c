@@ -11,9 +11,9 @@ typedef struct {
     int           scale;
 } VipSdlCtx;
 
-/* Phosphor green on black — classic COSMAC VIP look */
-#define PIXEL_ON  0xFF33FF33u
-#define PIXEL_OFF 0xFF000000u
+/* Match Emma02's COSMAC VIP presentation: white pixels on deep blue. */
+#define PIXEL_ON  0xFFFFFFFFu
+#define PIXEL_OFF 0xFF100080u
 
 static void sdl_render(void *ctx, const uint8_t *vram, int w, int h) {
     VipSdlCtx *c = ctx;
@@ -45,7 +45,7 @@ RcaDisplay *rca_display_sdl_create(int scale) {
     VipSdlCtx *c = calloc(1, sizeof(*c));
     c->scale  = scale;
     c->window = SDL_CreateWindow(
-        "JEMU — COSMAC VIP",
+        "JEMU — COSMAC VIP - Pixie",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         CDP1861_DISPLAY_W * scale, CDP1861_DISPLAY_H * scale,
         SDL_WINDOW_SHOWN);
@@ -69,8 +69,8 @@ RcaDisplay *rca_display_sdl_create(int scale) {
         return NULL;
     }
 
-    /* Black screen until first DMA fills the framebuffer */
-    SDL_SetRenderDrawColor(c->renderer, 0, 0, 0, 255);
+    /* Blue screen until first DMA fills the framebuffer. */
+    SDL_SetRenderDrawColor(c->renderer, 16, 0, 128, 255);
     SDL_RenderClear(c->renderer);
     SDL_RenderPresent(c->renderer);
 

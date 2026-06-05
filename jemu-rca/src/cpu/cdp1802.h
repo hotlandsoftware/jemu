@@ -76,7 +76,9 @@ typedef struct Cdp1802 {
     void    (*io_out)(uint8_t port, uint8_t val, void *ud);
     void    (*q_out)(uint8_t q, void *ud);
     void    (*on_sync)(void *ud);  /* called once per machine cycle */
+    void    (*panic)(struct Cdp1802 *cpu, const char *reason, void *ud);
     void    *io_ud;
+    void    *panic_ud;
 
     uint64_t cycle_count;
     uint64_t insn_count;

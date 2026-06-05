@@ -10,6 +10,11 @@ static inline void mw(Cdp1802 *c, uint16_t a, uint8_t v) {
     c->mem[a & c->mem_mask] = v;
 }
 
+static void cdp1802_panic(Cdp1802 *c, const char *reason) {
+    if (c->panic)
+        c->panic(c, reason, c->panic_ud);
+}
+
 /* Short-branch: replace low byte of R[P] with the next memory byte */
 static inline void sbranch(Cdp1802 *c) {
     c->R[c->P] = (c->R[c->P] & 0xFF00u) | mr(c, c->R[c->P]);
@@ -36,6 +41,10 @@ static inline uint8_t sub8(Cdp1802 *cpu, uint8_t a, uint8_t b, uint8_t bin) {
 void cdp1802_request_dma_out(Cdp1802 *c, uint16_t count,
                               void (*cb)(uint8_t*, void*), void *ud) {
     if (!c->dma_out_pending) {
+        if ((uint32_t)c->dma_count + count > CDP1802_DMA_QUEUE_CAP) {
+            cdp1802_panic(c, "DMA-out queue overflow");
+            return;
+        }
         c->dma_out_pending   = true;
         c->next_dma_out.count = count;
         c->next_dma_out.cb    = cb;
@@ -46,6 +55,10 @@ void cdp1802_request_dma_out(Cdp1802 *c, uint16_t count,
 void cdp1802_request_dma_in(Cdp1802 *c, uint16_t count,
                              void (*cb)(uint8_t*, void*), void *ud) {
     if (!c->dma_in_pending) {
+        if ((uint32_t)c->dma_count + count > CDP1802_DMA_QUEUE_CAP) {
+            cdp1802_panic(c, "DMA-in queue overflow");
+            return;
+        }
         c->dma_in_pending   = true;
         c->next_dma_in.count = count;
         c->next_dma_in.cb    = cb;
@@ -100,6 +113,8 @@ void cdp1802_init(Cdp1802 *c, uint8_t *mem, uint32_t mem_size) {
     c->IE       = 1;
     c->state    = CDP1802_S_EXECUTE;
     c->init_pending = true;
+    for (int i = 0; i < 4; i++)
+        c->EF[i] = true;
 }
 
 void cdp1802_reset(Cdp1802 *c) {
@@ -113,6 +128,8 @@ void cdp1802_reset(Cdp1802 *c) {
     c->dma_out_pending = false;
     c->irq_pending     = false;
     c->dma_head = c->dma_count = 0;
+    for (int i = 0; i < 4; i++)
+        c->EF[i] = true;
     if (c->q_out) c->q_out(0, c->io_ud);
 }
 
@@ -204,18 +221,18 @@ void cdp1802_step(Cdp1802 *c) {
         case 0x31: if (c->Q)      sbranch(c); else c->R[c->P]++; break;     /* BQ  */
         case 0x32: if (!c->D)     sbranch(c); else c->R[c->P]++; break;     /* BZ  */
         case 0x33: if (c->DF)     sbranch(c); else c->R[c->P]++; break;     /* BDF */
-        case 0x34: if (c->EF[0])  sbranch(c); else c->R[c->P]++; break;     /* B1  */
-        case 0x35: if (c->EF[1])  sbranch(c); else c->R[c->P]++; break;     /* B2  */
-        case 0x36: if (c->EF[2])  sbranch(c); else c->R[c->P]++; break;     /* B3  */
-        case 0x37: if (c->EF[3])  sbranch(c); else c->R[c->P]++; break;     /* B4  */
+        case 0x34: if (!c->EF[0]) sbranch(c); else c->R[c->P]++; break;     /* B1  */
+        case 0x35: if (!c->EF[1]) sbranch(c); else c->R[c->P]++; break;     /* B2  */
+        case 0x36: if (!c->EF[2]) sbranch(c); else c->R[c->P]++; break;     /* B3  */
+        case 0x37: if (!c->EF[3]) sbranch(c); else c->R[c->P]++; break;     /* B4  */
         case 0x38: c->R[c->P]++; break;                                      /* SKP */
         case 0x39: if (!c->Q)     sbranch(c); else c->R[c->P]++; break;     /* BNQ */
         case 0x3A: if (c->D)      sbranch(c); else c->R[c->P]++; break;     /* BNZ */
         case 0x3B: if (!c->DF)    sbranch(c); else c->R[c->P]++; break;     /* BNF */
-        case 0x3C: if (!c->EF[0]) sbranch(c); else c->R[c->P]++; break;     /* BN1 */
-        case 0x3D: if (!c->EF[1]) sbranch(c); else c->R[c->P]++; break;     /* BN2 */
-        case 0x3E: if (!c->EF[2]) sbranch(c); else c->R[c->P]++; break;     /* BN3 */
-        case 0x3F: if (!c->EF[3]) sbranch(c); else c->R[c->P]++; break;     /* BN4 */
+        case 0x3C: if (c->EF[0])  sbranch(c); else c->R[c->P]++; break;     /* BN1 */
+        case 0x3D: if (c->EF[1])  sbranch(c); else c->R[c->P]++; break;     /* BN2 */
+        case 0x3E: if (c->EF[2])  sbranch(c); else c->R[c->P]++; break;     /* BN3 */
+        case 0x3F: if (c->EF[3])  sbranch(c); else c->R[c->P]++; break;     /* BN4 */
 
         /* 0x40-0x4F  LDA Rn */
         case 0x40: case 0x41: case 0x42: case 0x43:
@@ -383,7 +400,7 @@ void cdp1802_step(Cdp1802 *c) {
         case 0xFE: { uint8_t b=(c->D>>7)&1u; c->DF=b; c->D<<=1; break; } /* SHL */
         case 0xFF: { uint8_t i=mr(c,c->R[c->P]); c->R[c->P]++; c->D=sub8(c,c->D,i,0); break; } /* SMI */
 
-        default: break;
+        default: cdp1802_panic(c, "unsupported opcode"); break;
         }
 
         c->exec_left--;
@@ -424,5 +441,8 @@ void cdp1802_step(Cdp1802 *c) {
         c->state = CDP1802_S_FETCH;
         break;
     }
+    default:
+        cdp1802_panic(c, "invalid CPU cycle state");
+        break;
     }
 }

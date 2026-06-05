@@ -32,9 +32,11 @@ static const JemuArgsDef def = {
     .extra_help =
         "\nRCA options:\n"
         "  -rom ADDR:FILE   Load a ROM/blob at address ADDR; may be repeated\n"
+        "  -rom FILE        Load a ROM/blob using content-based address detection, or 0x0000\n"
         "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"
         "  -start ADDR      Start CDP1802 execution at ADDR\n"
         "\nExamples:\n"
+        "  ./bin/jemu-rca -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
@@ -53,11 +55,42 @@ static bool add_rom(RcaConfig *cfg, uint32_t addr, const char *path) {
     return true;
 }
 
-/* Parse "0xADDR:path/to/file" or "ADDR:path/to/file" */
+static bool infer_rom_addr(const char *path, uint32_t *addr) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "jemu-rca: failed to open '%s'\n", path);
+        return false;
+    }
+
+    uint8_t header[3] = {0};
+    size_t n = fread(header, 1, sizeof(header), f);
+    fclose(f);
+
+    /*
+     * Many RCA/VIP ROM images begin with:
+     *   F8 pp  LDI pp
+     *   Bn     PHI Rn
+     * The loaded page byte is therefore visible in the image itself.
+     */
+    if (n == sizeof(header) && header[0] == 0xF8 &&
+        header[2] >= 0xB0 && header[2] <= 0xBF) {
+        *addr = (uint32_t)header[1] << 8;
+        return true;
+    }
+
+    return false;
+}
+
+/* Parse "0xADDR:path/to/file", "ADDR:path/to/file", or infer from "FILE". */
 static bool parse_rom_arg(RcaConfig *cfg, const char *arg) {
     const char *colon = strchr(arg, ':');
-    if (!colon || colon == arg) {
-        fprintf(stderr, "jemu-rca: -rom expects ADDR:FILE, got '%s'\n", arg);
+    if (!colon) {
+        uint32_t addr = 0;
+        infer_rom_addr(arg, &addr);
+        return add_rom(cfg, addr, arg);
+    }
+    if (colon == arg) {
+        fprintf(stderr, "jemu-rca: -rom expects ADDR:FILE or FILE, got '%s'\n", arg);
         return false;
     }
     /* Copy address portion so strtoul can read it as a C string */

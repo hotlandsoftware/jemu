@@ -18,6 +18,7 @@ struct JemuVncServer {
     int             fb_w, fb_h;  /* scaled output dimensions */
     bool            running;
     uint8_t         keys[16];    /* CHIP-8 key state from VNC clients */
+    uint32_t        queued_keysym;
 };
 
 /* X11 keysyms matching the SDL/GTK CHIP-8 keypad layout:
@@ -169,8 +170,10 @@ static void vnc_handle_client(JemuVncServer *vnc, int fd) {
             uint8_t b[7]; if (!recvall(fd, b, 7)) return;
             uint8_t down = b[0];
             uint32_t sym; memcpy(&sym, b+3, 4); sym = ntohl(sym);
+            uint32_t raw_sym = sym;
             if (sym >= 0x41 && sym <= 0x5A) sym |= 0x20; /* normalize to lowercase */
             pthread_mutex_lock(&vnc->lock);
+            if (down) vnc->queued_keysym = raw_sym;
             for (int k = 0; k < 16; k++)
                 if (chip8_keysyms[k] == sym) { vnc->keys[k] = down; break; }
             pthread_mutex_unlock(&vnc->lock);
@@ -268,6 +271,15 @@ void jemu_vnc_get_keys(JemuVncServer *vnc, uint8_t keys[16]) {
     pthread_mutex_lock(&vnc->lock);
     memcpy(keys, vnc->keys, 16);
     pthread_mutex_unlock(&vnc->lock);
+}
+
+uint32_t jemu_vnc_pop_keysym(JemuVncServer *vnc) {
+    if (!vnc) return 0;
+    pthread_mutex_lock(&vnc->lock);
+    uint32_t sym = vnc->queued_keysym;
+    vnc->queued_keysym = 0;
+    pthread_mutex_unlock(&vnc->lock);
+    return sym;
 }
 
 void jemu_vnc_update(JemuVncServer *vnc,

@@ -13,6 +13,7 @@
 typedef struct RcaVipState {
     Cdp1802  cpu;
     Cdp1861  vdc;
+    const RcaConfig *cfg;
     uint8_t  mem[VIP_MEM_SIZE];
     JemuMonitor *monitor;
     JemuVncServer *vnc;
@@ -24,6 +25,7 @@ typedef struct RcaVipState {
     /* Hex keypad state */
     uint8_t  keys[16];    /* 1 = pressed */
     int      key_down;    /* most-recent key held, -1 = none */
+    int      ascii_key;   /* pending ASCII key, -1 = none */
 
     /* Simple front-panel inputs used by VIP loaders/monitors. */
     bool     ef2_down;
