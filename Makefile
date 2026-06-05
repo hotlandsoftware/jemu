@@ -1,79 +1,107 @@
 CC          := gcc
 BASE_CFLAGS := -Wall -Wextra -O2 -std=c11 -Icore/include -pthread
-CFLAGS      := $(BASE_CFLAGS) -Ijemu-chip8/include
+
+SDL2_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null || echo -I/usr/include/SDL2)
+SDL2_LIBS   := $(shell sdl2-config --libs   2>/dev/null || echo -lSDL2)
+
+# ── CHIP-8 ───────────────────────────────────────────────────────────────────
+
+CHIP8_CFLAGS := $(BASE_CFLAGS) -Ijemu-chip8/include $(SDL2_CFLAGS)
+CHIP8_LDFLAGS = $(SDL2_LIBS) -lncursesw -pthread
 
 CORE_SRC := \
 	core/src/memory.c \
 	core/src/tcg.c \
 	core/src/monitor.c \
-	core/src/vnc.c
+	core/src/vnc.c \
+	core/src/args.c
 
-CHIP8_BASE := \
+CHIP8_SRC := \
 	jemu-chip8/src/main.c \
-	jemu-chip8/src/cpu.c \
-	jemu-chip8/src/machine.c
-
-# SDL2 and ncurses are always compiled in
-CFLAGS  += $(shell sdl2-config --cflags 2>/dev/null || echo -I/usr/include/SDL2)
-LDFLAGS  = $(shell sdl2-config --libs   2>/dev/null || echo -lSDL2) -lncursesw -pthread
-
-CHIP8_UI := \
-	jemu-chip8/src/display_sdl.c \
-	jemu-chip8/src/input_sdl.c \
-	jemu-chip8/src/display_curses.c
+	jemu-chip8/src/cpu/chip8_cpu.c \
+	jemu-chip8/src/hardware/machine.c \
+	jemu-chip8/src/vga/display_sdl.c \
+	jemu-chip8/src/vga/input_sdl.c \
+	jemu-chip8/src/vga/display_curses.c
 
 ifdef GTK
-# GTK3 is opt-in: adds the GTK backend on top of the always-present SDL/curses
-CFLAGS  += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
-LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
-CHIP8_UI += jemu-chip8/src/ui_gtk.c
-BUILDDIR := build/gtk
+CHIP8_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
+CHIP8_LDFLAGS += $(shell pkg-config --libs gtk+-3.0)
+CHIP8_SRC    += jemu-chip8/src/vga/ui_gtk.c
+BUILDDIR     := build/gtk
 else
-BUILDDIR := build/sdl
+BUILDDIR     := build/sdl
 endif
 
-CHIP8_SRC := $(CHIP8_BASE) $(CHIP8_UI)
 CHIP8_OBJ := $(patsubst %.c, $(BUILDDIR)/%.o, $(CORE_SRC) $(CHIP8_SRC))
 
-COSMAC_SRC := jemu-cosmac/src/main.c
-COSMAC_OBJ := $(patsubst %.c, build/cosmac/%.o, $(COSMAC_SRC))
+# ── RCA ──────────────────────────────────────────────────────────────────────
+
+RCA_CFLAGS := $(BASE_CFLAGS) \
+	-Ijemu-rca/include \
+	-Ijemu-rca/src/cpu \
+	-Ijemu-rca/src/vga \
+	-Ijemu-rca/src/hardware \
+	$(SDL2_CFLAGS)
+RCA_LDFLAGS := $(SDL2_LIBS) -pthread
+
+RCA_CORE_SRC := \
+	core/src/memory.c \
+	core/src/args.c
+
+RCA_SRC := \
+	jemu-rca/src/main.c \
+	jemu-rca/src/cpu/cdp1802.c \
+	jemu-rca/src/vga/cdp1861.c \
+	jemu-rca/src/vga/display_sdl.c \
+	jemu-rca/src/hardware/machine_vip.c
+
+RCA_OBJ := $(patsubst %.c, build/rca/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
+
+# ── Rules ─────────────────────────────────────────────────────────────────────
 
 .PHONY: all clean
 
-all: bin/jemu-chip8 bin/jemu-cosmac
+all: bin/jemu-chip8 bin/jemu-rca
 
 bin/jemu-chip8: $(CHIP8_OBJ)
 	@mkdir -p bin
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(CHIP8_LDFLAGS)
 
-bin/jemu-cosmac: $(COSMAC_OBJ)
+bin/jemu-rca: $(RCA_OBJ)
 	@mkdir -p bin
-	$(CC) -o $@ $^ -pthread
-
-build/cosmac/%.o: %.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BASE_CFLAGS) -Ijemu-cosmac/include -c -o $@ $<
+	$(CC) -o $@ $^ $(RCA_LDFLAGS)
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CHIP8_CFLAGS) -c -o $@ $<
+
+build/rca/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(RCA_CFLAGS) -c -o $@ $<
 
 clean:
 	rm -rf build bin
 
-$(CHIP8_OBJ): \
+# ── Header dependencies ───────────────────────────────────────────────────────
+
+CORE_HDRS := \
 	Makefile \
 	core/include/jemu/jemu.h \
+	core/include/jemu/args.h \
+	core/include/jemu/display.h
+
+$(CHIP8_OBJ): $(CORE_HDRS) \
 	core/include/jemu/memory.h \
 	core/include/jemu/cpu.h \
 	core/include/jemu/device.h \
 	core/include/jemu/tcg.h \
 	core/include/jemu/vnc.h \
-	core/include/jemu/display.h \
 	jemu-chip8/include/chip8.h
 
-$(COSMAC_OBJ): \
-	Makefile \
-	core/include/jemu/jemu.h \
-	core/include/jemu/display.h \
-	jemu-cosmac/include/cosmac.h
+$(RCA_OBJ): $(CORE_HDRS) \
+	core/include/jemu/memory.h \
+	jemu-rca/include/rca.h \
+	jemu-rca/src/cpu/cdp1802.h \
+	jemu-rca/src/vga/cdp1861.h \
+	jemu-rca/src/hardware/vip.h

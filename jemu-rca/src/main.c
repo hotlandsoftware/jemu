@@ -1,0 +1,152 @@
+#include "rca.h"
+#include "hardware/vip.h"
+#include "jemu/jemu.h"
+#include "jemu/args.h"
+#include <SDL2/SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+
+/* ── Device registry ─────────────────────────────────────────────────────── */
+
+static const JemuDevDesc machines[] = {
+    {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
+    {"generic",    "Generic RCA COSMAC (stub, not yet implemented)"},
+};
+static const JemuDevDesc cpus[] = {
+    {"cdp1802", "RCA CDP1802 COSMAC (1.76 MHz, 8-bit accumulator, 16 × 16-bit scratchpad)"},
+};
+static const JemuDevDesc vgas[] = {
+    {"cdp1861", "RCA CDP1861 Pixie (64×128 px, NTSC 60 Hz, DMA-driven)"},
+    {"none",    "No video output"},
+};
+static const JemuArgsDef def = {
+    .prog         = "jemu-rca",
+    .machines     = machines, .n_machines = 2,
+    .cpus         = cpus,     .n_cpus     = 1,
+    .vgas         = vgas,     .n_vgas     = 2,
+    .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
+                  | JEMU_DISP_F(JEMU_DISPLAY_NONE),
+    .vnc_support  = false,
+};
+
+/* ── ROM load helper ─────────────────────────────────────────────────────── */
+
+static bool add_rom(RcaConfig *cfg, uint32_t addr, const char *path) {
+    if (cfg->n_roms >= RCA_MAX_ROM_LOADS) {
+        fprintf(stderr, "jemu-rca: too many -rom loads (max %d)\n", RCA_MAX_ROM_LOADS);
+        return false;
+    }
+    cfg->roms[cfg->n_roms].addr = addr;
+    cfg->roms[cfg->n_roms].path = path;
+    cfg->n_roms++;
+    return true;
+}
+
+/* Parse "0xADDR:path/to/file" or "ADDR:path/to/file" */
+static bool parse_rom_arg(RcaConfig *cfg, const char *arg) {
+    const char *colon = strchr(arg, ':');
+    if (!colon || colon == arg) {
+        fprintf(stderr, "jemu-rca: -rom expects ADDR:FILE, got '%s'\n", arg);
+        return false;
+    }
+    /* Copy address portion so strtoul can read it as a C string */
+    char addr_buf[32];
+    size_t addr_len = (size_t)(colon - arg);
+    if (addr_len >= sizeof(addr_buf)) addr_len = sizeof(addr_buf) - 1;
+    memcpy(addr_buf, arg, addr_len);
+    addr_buf[addr_len] = '\0';
+    uint32_t addr = (uint32_t)strtoul(addr_buf, NULL, 0);
+    const char *path = colon + 1;
+    if (*path == '\0') {
+        fprintf(stderr, "jemu-rca: -rom missing file path in '%s'\n", arg);
+        return false;
+    }
+    return add_rom(cfg, addr, path);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        char *fake[] = {argv[0], "-h"};
+        int rem = 0;
+        jemu_args_parse(2, fake, &def, &(JemuArgs){}, &rem, NULL);
+        return 1;
+    }
+
+    RcaConfig cfg = {
+        .machine       = RCA_MACHINE_COSMAC_VIP,
+        .cpu           = RCA_CPU_CDP1802,
+        .vga           = RCA_VGA_CDP1861,
+        .display_type  = JEMU_DISPLAY_SDL,
+        .display_scale = 4,
+    };
+
+    JemuArgs args = {
+        .display_type  = cfg.display_type,
+        .display_scale = cfg.display_scale,
+    };
+
+    char *rem[32]; int nrem = 0;
+    if (!jemu_args_parse(argc, argv, &def, &args, &nrem, rem))
+        return 1;
+
+    /* RCA-specific remainder flags */
+    uint32_t positional_addr = 0x0000;
+    for (int i = 0; i < nrem; i++) {
+        if (strcmp(rem[i], "-rom") == 0 && i + 1 < nrem) {
+            if (!parse_rom_arg(&cfg, rem[++i])) return 1;
+        } else if (strcmp(rem[i], "-load-addr") == 0 && i + 1 < nrem) {
+            positional_addr = (uint32_t)strtoul(rem[++i], NULL, 0);
+        } else {
+            fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);
+            return 1;
+        }
+    }
+
+    /* Positional ROM (backwards-compatible single-file usage) */
+    if (args.rom_path) {
+        if (!add_rom(&cfg, positional_addr, args.rom_path)) return 1;
+    }
+
+    cfg.display_type  = args.display_type;
+    cfg.display_scale = args.display_scale;
+
+    if (args.machine) {
+        if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
+        else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
+    }
+    if (args.vga) {
+        if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;
+        else if (strcmp(args.vga, "none")    == 0) cfg.vga = RCA_VGA_NONE;
+    }
+
+    if (cfg.n_roms == 0) {
+        fprintf(stderr, "jemu-rca: no ROM specified — use positional arg or -rom ADDR:FILE\n");
+        return 1;
+    }
+
+    if (cfg.machine == RCA_MACHINE_GENERIC) {
+        fprintf(stderr, "jemu-rca: generic machine not yet implemented\n");
+        return 1;
+    }
+
+    if (cfg.display_type == JEMU_DISPLAY_SDL) {
+        if (SDL_Init(0) < 0) {
+            fprintf(stderr, "jemu-rca: SDL_Init failed: %s\n", SDL_GetError());
+            return 1;
+        }
+    }
+
+    RcaVipState *s = rca_vip_create(&cfg);
+    if (!s) {
+        if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
+        return 1;
+    }
+
+    rca_machine_run(s, &cfg);
+    rca_vip_destroy(s);
+
+    if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
+    return 0;
+}

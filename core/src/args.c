@@ -1,0 +1,243 @@
+#include "jemu/args.h"
+#include "jemu/jemu.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* ── Display backend table (fixed set, same for all binaries) ────────────── */
+
+typedef struct { JemuDisplayType type; const char *name; const char *desc; } DispEntry;
+
+static const DispEntry display_table[] = {
+    { JEMU_DISPLAY_SDL,    "sdl",    "SDL2 windowed display (hardware-accelerated)" },
+    { JEMU_DISPLAY_GTK,    "gtk",    "GTK3 windowed display with menu bar" },
+    { JEMU_DISPLAY_CURSES, "curses", "ncurses terminal (half-block Unicode characters)" },
+    { JEMU_DISPLAY_NONE,   "none",   "Headless — no display output (pair with -vnc)" },
+};
+#define N_DISPLAYS (int)(sizeof(display_table) / sizeof(display_table[0]))
+
+/* ── Help / listing helpers ──────────────────────────────────────────────── */
+
+static void print_usage(const JemuArgsDef *def) {
+    printf("jemu — Jaguar Emulator v" JEMU_VERSION_STR "\n"
+           "Usage: %s [options] <rom>\n\n"
+           "Options:\n", def->prog);
+    if (def->n_machines > 0)
+        printf("  %-14s Machine type      (use -M ? to list)\n", "-M TYPE");
+    if (def->n_cpus > 0)
+        printf("  %-14s CPU model         (use -cpu ? to list)\n", "-cpu TYPE");
+    if (def->n_vgas > 0)
+        printf("  %-14s Video chip        (use -vga ? to list)\n", "-vga TYPE");
+    printf("  %-14s Display backend   (use -display ? to list)\n", "-display TYPE");
+    printf("  %-14s Window scale factor\n", "-scale N");
+    if (def->vnc_support)
+        printf("  %-14s VNC server (use -vnc ? for address format)\n", "-vnc ADDR");
+    printf("  %-14s Show this help\n", "-h");
+}
+
+static void list_devices(const char *kind, const JemuDevDesc *devs, int n) {
+    printf("Available %s:\n", kind);
+    int maxw = 0;
+    for (int i = 0; i < n; i++) {
+        int w = (int)strlen(devs[i].name);
+        if (w > maxw) maxw = w;
+    }
+    for (int i = 0; i < n; i++)
+        printf("  %-*s  %s\n", maxw, devs[i].name, devs[i].desc);
+}
+
+static void list_displays(unsigned mask) {
+    /* Build a temporary table of only the supported entries */
+    DispEntry tmp[N_DISPLAYS];
+    int n = 0;
+    for (int i = 0; i < N_DISPLAYS; i++)
+        if (mask & JEMU_DISP_F(display_table[i].type))
+            tmp[n++] = display_table[i];
+
+    printf("Available display backends:\n");
+    int maxw = 0;
+    for (int i = 0; i < n; i++) {
+        int w = (int)strlen(tmp[i].name);
+        if (w > maxw) maxw = w;
+    }
+    for (int i = 0; i < n; i++)
+        printf("  %-*s  %s\n", maxw, tmp[i].name, tmp[i].desc);
+}
+
+static void print_vnc_help(void) {
+    printf("VNC address format:\n"
+           "  :N            listen on all interfaces, port 5900+N\n"
+           "  host:N        listen on host, port 5900+N\n"
+           "Examples:  :0   127.0.0.1:0   0.0.0.0:1\n");
+}
+
+/* ── Validation helpers ──────────────────────────────────────────────────── */
+
+static bool is_help(const char *s) {
+    return strcmp(s, "?") == 0 || strcmp(s, "help") == 0;
+}
+
+static bool dev_validate(const char *prog, const char *flag,
+                          const JemuDevDesc *devs, int n, const char *val) {
+    for (int i = 0; i < n; i++)
+        if (strcmp(devs[i].name, val) == 0) return true;
+    fprintf(stderr, "%s: unknown %s '%s' (try %s ?)\n", prog, flag, val, flag);
+    return false;
+}
+
+/* ── Main parser ─────────────────────────────────────────────────────────── */
+
+bool jemu_args_parse(int argc, char **argv,
+                     const JemuArgsDef *def, JemuArgs *out,
+                     int *rem_argc, char **rem_argv) {
+    if (rem_argc) *rem_argc = 0;
+
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+
+        /* ── Help ── */
+        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
+            print_usage(def);
+            exit(0);
+        }
+
+        /* ── -M TYPE ── */
+        if (strcmp(a, "-M") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -M requires an argument\n", def->prog);
+                return false;
+            }
+            const char *v = argv[++i];
+            if (is_help(v)) {
+                list_devices("machines", def->machines, def->n_machines);
+                exit(0);
+            }
+            if (!dev_validate(def->prog, "-M", def->machines, def->n_machines, v))
+                return false;
+            out->machine = v;
+            continue;
+        }
+
+        /* ── -cpu TYPE ── */
+        if (strcmp(a, "-cpu") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -cpu requires an argument\n", def->prog);
+                return false;
+            }
+            const char *v = argv[++i];
+            if (is_help(v)) {
+                list_devices("CPUs", def->cpus, def->n_cpus);
+                exit(0);
+            }
+            if (def->n_cpus == 0) {
+                fprintf(stderr, "%s: -cpu not supported\n", def->prog);
+                return false;
+            }
+            if (!dev_validate(def->prog, "-cpu", def->cpus, def->n_cpus, v))
+                return false;
+            out->cpu = v;
+            continue;
+        }
+
+        /* ── -vga TYPE ── */
+        if (strcmp(a, "-vga") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -vga requires an argument\n", def->prog);
+                return false;
+            }
+            const char *v = argv[++i];
+            if (is_help(v)) {
+                list_devices("video chips", def->vgas, def->n_vgas);
+                exit(0);
+            }
+            if (def->n_vgas == 0) {
+                fprintf(stderr, "%s: -vga not supported\n", def->prog);
+                return false;
+            }
+            if (!dev_validate(def->prog, "-vga", def->vgas, def->n_vgas, v))
+                return false;
+            out->vga = v;
+            continue;
+        }
+
+        /* ── -display TYPE ── */
+        if (strcmp(a, "-display") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -display requires an argument\n", def->prog);
+                return false;
+            }
+            const char *v = argv[++i];
+            if (is_help(v)) {
+                list_displays(def->display_mask);
+                exit(0);
+            }
+            bool found = false;
+            for (int d = 0; d < N_DISPLAYS; d++) {
+                if (strcmp(display_table[d].name, v) == 0) {
+                    if (!(def->display_mask & JEMU_DISP_F(display_table[d].type))) {
+                        fprintf(stderr, "%s: display '%s' not supported "
+                                "(try -display ?)\n", def->prog, v);
+                        return false;
+                    }
+                    out->display_type    = display_table[d].type;
+                    out->display_explicit = true;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "%s: unknown display '%s' (try -display ?)\n",
+                        def->prog, v);
+                return false;
+            }
+            continue;
+        }
+
+        /* ── -scale N ── */
+        if (strcmp(a, "-scale") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -scale requires an argument\n", def->prog);
+                return false;
+            }
+            int s = atoi(argv[++i]);
+            if (s < 1) s = 1;
+            out->display_scale = s;
+            continue;
+        }
+
+        /* ── -vnc ADDR ── */
+        if (strcmp(a, "-vnc") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: -vnc requires an argument\n", def->prog);
+                return false;
+            }
+            const char *v = argv[++i];
+            if (is_help(v)) { print_vnc_help(); exit(0); }
+            if (!def->vnc_support) {
+                fprintf(stderr, "%s: -vnc not supported\n", def->prog);
+                return false;
+            }
+            out->vnc_addr = v;
+            continue;
+        }
+
+        /* ── Positional: ROM path ── */
+        if (a[0] != '-') {
+            out->rom_path = a;
+            continue;
+        }
+
+        /* ── Unknown flag: pass back to caller, or error ── */
+        if (rem_argv && rem_argc) {
+            rem_argv[(*rem_argc)++] = argv[i];
+            /* if the next token looks like a value (no leading -), consume it too */
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+                rem_argv[(*rem_argc)++] = argv[++i];
+        } else {
+            fprintf(stderr, "%s: unknown option '%s' (try -h)\n", def->prog, a);
+            return false;
+        }
+    }
+
+    return true;
+}

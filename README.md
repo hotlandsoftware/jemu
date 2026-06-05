@@ -16,12 +16,8 @@ make GTK=1 # for GTK support
 
 # Targets
 
-## Machine emulators
-Full hardware emulation (CPU, memory, peripherals)
-
-| Machine    | CPU      | Binary        | Status |  Notes  |
-|------------|----------|---------------|--------|---------|
-| COSMAC VIP | RCA 1802 | `jemu-cosmac` | Stub   |         |
+## CPUs/Machines
+See machines.md
 
 ## Interpreters
 Direct bytecode execution (no hardware model)
