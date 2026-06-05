@@ -281,28 +281,4 @@ Chip8Display *chip8_display_gtk_create(int scale) {
     return d;
 }
 
-/* ── Shared none backend ──────────────────────────────────────────────────── */
 
-static void none_render(void *ctx, const uint8_t *vram) { (void)ctx; (void)vram; }
-static void none_destroy(void *ctx) { free(ctx); }
-
-Chip8Display *chip8_display_none_create(void) {
-    Chip8Display *d = calloc(1, sizeof(*d));
-    d->render  = none_render;
-    d->destroy = none_destroy;
-    d->run     = NULL;
-    d->ctx     = calloc(1, 1);
-    return d;
-}
-
-/* ── Public API ───────────────────────────────────────────────────────────── */
-
-void chip8_display_render(Chip8Display *d, const uint8_t *vram) {
-    d->render(d->ctx, vram);
-}
-
-void chip8_display_destroy(Chip8Display *d) {
-    if (!d) return;
-    d->destroy(d->ctx);
-    free(d);
-}

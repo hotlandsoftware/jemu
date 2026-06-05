@@ -1,8 +1,6 @@
 #include "chip8.h"
 #include "jemu/jemu.h"
-#ifndef JEMU_GTK
 #include <SDL2/SDL.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,14 +11,14 @@ static void usage(const char *prog) {
         "Usage: %s [options] <rom.ch8>\n"
         "\n"
         "Options:\n"
-        "  -M TYPE    Machine type (use -M ? to list)\n"
-        "  -m SIZE    Memory size (default: 4K)\n"
-        "  -cpu TYPE  CPU variant (use -cpu ? to list)\n"
-        "  -vga TYPE  Display adapter (use -vga ? to list)\n"
-        "  -vnc ADDR  VNC server, e.g. :0 or 127.0.0.1:1\n"
-        "  -scale N   Pixel scale factor (default: 10)\n"
-        "  -hz N      CPU speed instructions/sec (default: 700)\n"
-        "  -h         Show this help\n",
+        "  -M TYPE      Machine type (use -M ? to list)\n"
+        "  -display T   Display backend (use -display ? to list)\n"
+        "  -m SIZE      Memory size (default: 4K)\n"
+        "  -cpu TYPE    CPU variant (use -cpu ? to list)\n"
+        "  -vnc ADDR    VNC server, e.g. :0 or 127.0.0.1:1\n"
+        "  -scale N     Pixel scale factor (default: 10)\n"
+        "  -hz N        CPU speed instructions/sec (default: 700)\n"
+        "  -h           Show this help\n",
         prog);
 }
 
@@ -36,17 +34,17 @@ int main(int argc, char *argv[]) {
     if (argc < 2) { usage(argv[0]); return 1; }
 
     Chip8Config cfg = {
-        .rom_path    = NULL,
-        .mem_size    = CHIP8_MEM_SIZE,
-        .cpu_hz      = CHIP8_DEFAULT_HZ,
-        .vga_enabled = true,
-        .vga_scale   = 10,
-        .quirk_shift = false,
-        .quirk_jump  = false,
-        .vnc_addr    = NULL,
-        .machine     = CHIP8_MACHINE_GENERIC,
+        .rom_path     = NULL,
+        .mem_size     = CHIP8_MEM_SIZE,
+        .cpu_hz       = CHIP8_DEFAULT_HZ,
+        .display_type = JEMU_DISPLAY_SDL,
+        .display_scale = 10,
+        .quirk_shift  = false,
+        .quirk_jump   = false,
+        .vnc_addr     = NULL,
+        .machine      = CHIP8_MACHINE_GENERIC,
     };
-    bool vga_explicit = false;
+    bool display_explicit = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0) {
@@ -56,14 +54,37 @@ int main(int argc, char *argv[]) {
             const char *mach = argv[++i];
             if (strcmp(mach, "?") == 0 || strcmp(mach, "help") == 0) {
                 printf("Available machines:\n"
-                       "  generic    Generic CHIP-8 (default)\n"
-                       "  vip        COSMAC VIP\n");
+                       "  generic    Generic CHIP-8 (default)\n");
                 return 0;
             }
-            if (strcmp(mach, "generic") == 0)       cfg.machine = CHIP8_MACHINE_GENERIC;
-            else if (strcmp(mach, "vip") == 0)      cfg.machine = CHIP8_MACHINE_VIP;
+            if (strcmp(mach, "generic") == 0) cfg.machine = CHIP8_MACHINE_GENERIC;
             else {
                 fprintf(stderr, "jemu-chip8: unknown machine '%s' (try -M ?)\n", mach);
+                return 1;
+            }
+
+        } else if (strcmp(argv[i], "-display") == 0 && i + 1 < argc) {
+            const char *disp = argv[++i];
+            if (strcmp(disp, "?") == 0 || strcmp(disp, "help") == 0) {
+                printf("Available display types:\n"
+                       "  sdl      SDL2 window (default)\n"
+                       "  curses   ncurses terminal\n"
+                       "  none     No display (headless)\n"
+#ifdef JEMU_GTK
+                       "  gtk      GTK3 window\n"
+#endif
+                       );
+                return 0;
+            }
+            display_explicit = true;
+            if      (strcmp(disp, "sdl")    == 0) cfg.display_type = JEMU_DISPLAY_SDL;
+            else if (strcmp(disp, "curses") == 0) cfg.display_type = JEMU_DISPLAY_CURSES;
+            else if (strcmp(disp, "none")   == 0) cfg.display_type = JEMU_DISPLAY_NONE;
+#ifdef JEMU_GTK
+            else if (strcmp(disp, "gtk")    == 0) cfg.display_type = JEMU_DISPLAY_GTK;
+#endif
+            else {
+                fprintf(stderr, "jemu-chip8: unknown display '%s' (try -display ?)\n", disp);
                 return 1;
             }
 
@@ -82,22 +103,6 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
 
-        } else if (strcmp(argv[i], "-vga") == 0 && i + 1 < argc) {
-            vga_explicit = true;
-            const char *vga = argv[++i];
-            if (strcmp(vga, "?") == 0 || strcmp(vga, "help") == 0) {
-                printf("Available VGA adapters:\n"
-                       "  std        standard display (default)\n"
-                       "  none       no graphics (headless)\n");
-                return 0;
-            }
-            if (strcmp(vga, "std") == 0)        cfg.vga_enabled = true;
-            else if (strcmp(vga, "none") == 0)  cfg.vga_enabled = false;
-            else {
-                fprintf(stderr, "jemu-chip8: unknown vga '%s' (try -vga ?)\n", vga);
-                return 1;
-            }
-
         } else if (strcmp(argv[i], "-vnc") == 0 && i + 1 < argc) {
             const char *vnc = argv[++i];
             if (strcmp(vnc, "?") == 0 || strcmp(vnc, "help") == 0) {
@@ -110,8 +115,8 @@ int main(int argc, char *argv[]) {
             cfg.vnc_addr = vnc;
 
         } else if (strcmp(argv[i], "-scale") == 0 && i + 1 < argc) {
-            cfg.vga_scale = atoi(argv[++i]);
-            if (cfg.vga_scale < 1) cfg.vga_scale = 1;
+            cfg.display_scale = atoi(argv[++i]);
+            if (cfg.display_scale < 1) cfg.display_scale = 1;
 
         } else if (strcmp(argv[i], "-hz") == 0 && i + 1 < argc) {
             cfg.cpu_hz = atoi(argv[++i]);
@@ -133,30 +138,26 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* VNC replaces the window by default; -vga std overrides */
-    if (cfg.vnc_addr && !vga_explicit)
-        cfg.vga_enabled = false;
+    /* VNC with no explicit display → headless */
+    if (cfg.vnc_addr && !display_explicit)
+        cfg.display_type = JEMU_DISPLAY_NONE;
 
-#ifndef JEMU_GTK
-    if (SDL_Init(0) < 0) {
-        fprintf(stderr, "jemu-chip8: SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
+    if (cfg.display_type == JEMU_DISPLAY_SDL) {
+        if (SDL_Init(0) < 0) {
+            fprintf(stderr, "jemu-chip8: SDL_Init failed: %s\n", SDL_GetError());
+            return 1;
+        }
     }
-#endif
 
     Chip8State *s = chip8_machine_create(&cfg);
     if (!s) {
-#ifndef JEMU_GTK
-        SDL_Quit();
-#endif
+        if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
         return 1;
     }
 
     chip8_machine_run(s, &cfg);
     chip8_machine_destroy(s);
 
-#ifndef JEMU_GTK
-    SDL_Quit();
-#endif
+    if (cfg.display_type == JEMU_DISPLAY_SDL) SDL_Quit();
     return 0;
 }

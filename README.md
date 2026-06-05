@@ -14,7 +14,18 @@ make
 make GTK=1 # for GTK support
 ```
 
-# Supported CPU/Machines
-| CPU | Machines | Executable | Status | Notes |
-| -------- | -------- | -------- | -------- | -------- |
-| CHIP-8 | Generic CHIP-8, COSMAC VIP (stub) | ``jemu-chip8`` | Working | no audio support yet |
+# Targets
+
+## Machine emulators
+Full hardware emulation (CPU, memory, peripherals)
+
+| Machine    | CPU      | Binary        | Status |  Notes  |
+|------------|----------|---------------|--------|---------|
+| COSMAC VIP | RCA 1802 | `jemu-cosmac` | Stub   |         |
+
+## Interpreters
+Direct bytecode execution (no hardware model)
+
+| ISA    | Binary        | Status  | Notes              |
+|--------|---------------|---------|--------------------|
+| CHIP-8 | `jemu-chip8`  | Working | No audio yet       |

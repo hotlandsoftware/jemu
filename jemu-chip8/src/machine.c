@@ -1,8 +1,6 @@
 #include "chip8.h"
 #include "jemu/memory.h"
-#ifndef JEMU_GTK
 #include <SDL2/SDL.h>
-#endif
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -36,8 +34,8 @@ Chip8State *chip8_machine_create(const Chip8Config *cfg) {
     jemu_tb_cache_init(&s->tb_cache, free);
     if (cfg->vnc_addr)
         s->vnc = jemu_vnc_create(cfg->vnc_addr,
-                                 CHIP8_DISPLAY_W * cfg->vga_scale,
-                                 CHIP8_DISPLAY_H * cfg->vga_scale);
+                                 CHIP8_DISPLAY_W * cfg->display_scale,
+                                 CHIP8_DISPLAY_H * cfg->display_scale);
 
     memcpy(s->mem + CHIP8_FONT_BASE, chip8_font, CHIP8_FONT_BYTES);
 
@@ -83,27 +81,43 @@ void chip8_machine_destroy(Chip8State *s) {
 /* ── Run loop ─────────────────────────────────────────────────────────────── */
 
 void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
-    Chip8Display *display = cfg->vga_enabled
-        ? chip8_display_create(cfg->vga_scale)
-        : chip8_display_none_create();
+    Chip8Display *display;
+    switch (cfg->display_type) {
+    case JEMU_DISPLAY_SDL:
+        display = chip8_display_sdl_create(cfg->display_scale);
+        break;
+    case JEMU_DISPLAY_CURSES:
+        display = chip8_display_curses_create();
+        break;
+#ifdef JEMU_GTK
+    case JEMU_DISPLAY_GTK:
+        display = chip8_display_gtk_create(cfg->display_scale);
+        break;
+#endif
+    default:
+        display = chip8_display_none_create();
+        break;
+    }
 
     if (!display) {
         fprintf(stderr, "jemu-chip8: failed to create display\n");
         return;
     }
 
-    jemu_monitor_start(s->monitor);
+    /* Curses takes over the terminal — monitor can't use stdin */
+    bool use_monitor = (cfg->display_type != JEMU_DISPLAY_CURSES);
+    if (use_monitor) jemu_monitor_start(s->monitor);
 
-    /* Backends that own their main loop (GTK) handle everything in run(). */
+    /* Backends that own their main loop (GTK, curses) handle everything. */
     if (display->run) {
         display->run(display, s, cfg);
-        jemu_monitor_stop(s->monitor);
+        if (use_monitor) jemu_monitor_stop(s->monitor);
         chip8_display_destroy(display);
         return;
     }
 
-    /* Headless loop — no window, no SDL input (VNC-only or silent bench). */
-    if (!cfg->vga_enabled) {
+    /* Headless loop — VNC-only or silent bench */
+    if (cfg->display_type == JEMU_DISPLAY_NONE) {
         struct timespec ts = {0, 1000000000 / CHIP8_TIMER_HZ};
         const int insns_frame = cfg->cpu_hz / CHIP8_TIMER_HZ;
         bool running = true;
@@ -118,12 +132,8 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                 nanosleep(&ts, NULL);
                 continue;
             }
-
-            /* Poll VNC key state (edge detection for wait_key) */
             memcpy(s->keys_prev, s->keys, CHIP8_NUM_KEYS);
             jemu_vnc_get_keys(s->vnc, s->keys);
-
-            /* LD Vx, K stall */
             if (s->wait_key) {
                 for (int k = 0; k < CHIP8_NUM_KEYS; k++) {
                     if (s->keys[k] && !s->keys_prev[k]) {
@@ -136,7 +146,6 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                 nanosleep(&ts, NULL);
                 continue;
             }
-
             int budget = insns_frame;
             while (budget > 0 && !s->wait_key) {
                 JemuTb *tb = jemu_tb_lookup(&s->tb_cache, s->PC);
@@ -162,7 +171,6 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
         return;
     }
 
-#ifndef JEMU_GTK
     /* ── SDL2 run loop ── */
     Chip8Input *input = chip8_input_create();
     if (!input) {
@@ -178,33 +186,27 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
     while (!quit) {
         Uint32 frame_start = SDL_GetTicks();
 
-        /* Input (always, even when paused — keeps window alive) */
         memcpy(s->keys_prev, s->keys, CHIP8_NUM_KEYS);
         chip8_input_poll(input, s->keys, &quit);
         if (quit) break;
 
-        /* Monitor commands */
         JemuMonCmd cmd;
         while ((cmd = jemu_monitor_poll(s->monitor)) != JEMU_MON_NONE) {
             if      (cmd == JEMU_MON_QUIT)  quit = true;
             else if (cmd == JEMU_MON_RESET) chip8_machine_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP)  chip8_exec_single(s);
-            /* STOP/CONT: paused flag already updated by jemu_monitor_poll */
         }
         if (quit) break;
 
-        /* Display menu actions */
         if (chip8_display_take_reset(display))
             chip8_machine_reset(s, cfg);
 
-        /* While paused: service events but don't execute */
         if (jemu_monitor_is_paused(s->monitor)) {
             Uint32 e = SDL_GetTicks() - frame_start;
             if (e < frame_ms) SDL_Delay(frame_ms - e);
             continue;
         }
 
-        /* LD Vx, K stall */
         if (s->wait_key) {
             for (int k = 0; k < CHIP8_NUM_KEYS; k++) {
                 if (s->keys[k] && !s->keys_prev[k]) {
@@ -221,7 +223,6 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
             }
         }
 
-        /* Execute instructions for this frame */
         int budget = insns_frame;
         while (budget > 0 && !s->wait_key) {
             JemuTb *tb = jemu_tb_lookup(&s->tb_cache, s->PC);
@@ -252,5 +253,4 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
     jemu_monitor_stop(s->monitor);
     chip8_input_destroy(input);
     chip8_display_destroy(display);
-#endif /* !JEMU_GTK */
 }

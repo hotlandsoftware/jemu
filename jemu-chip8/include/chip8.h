@@ -4,6 +4,7 @@
 #include "jemu/tcg.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
+#include "jemu/display.h"
 
 /* ── Display ──────────────────────────────────────────────────────────────── */
 #define CHIP8_DISPLAY_W  64
@@ -62,6 +63,11 @@ static inline bool chip8_insn_is_terminal(Chip8InsnType t) {
     }
 }
 
+/* ── Machine type ─────────────────────────────────────────────────────────── */
+typedef enum {
+    CHIP8_MACHINE_GENERIC,
+} Chip8MachineType;
+
 /* ── Machine state ────────────────────────────────────────────────────────── */
 typedef struct Chip8State {
     uint8_t  V[CHIP8_NUM_REGS];
@@ -86,20 +92,15 @@ typedef struct Chip8State {
     uint64_t     tb_misses;
 } Chip8State;
 
-typedef enum {
-    CHIP8_MACHINE_GENERIC, /* default: modern/mixed quirks */
-    CHIP8_MACHINE_VIP,     /* COSMAC VIP (stub) */
-} Chip8MachineType;
-
 typedef struct Chip8Config {
     const char      *rom_path;
     uint32_t         mem_size;
     int              cpu_hz;
-    bool             vga_enabled;
-    int              vga_scale;
+    JemuDisplayType  display_type;
+    int              display_scale;
     bool             quirk_shift;
     bool             quirk_jump;
-    const char      *vnc_addr;  /* NULL = disabled, e.g. ":0" or "127.0.0.1:1" */
+    const char      *vnc_addr;
     Chip8MachineType machine;
 } Chip8Config;
 
@@ -112,7 +113,7 @@ typedef struct Chip8Config {
 typedef struct Chip8Display {
     void (*render)(void *ctx, const uint8_t *vram);
     void (*destroy)(void *ctx);
-    /* run() is set by backends that own their own main loop (GTK).
+    /* run() is set by backends that own their own main loop (GTK, curses).
      * When non-NULL, machine_run delegates to it entirely. */
     void (*run)(struct Chip8Display *d, Chip8State *s, const Chip8Config *cfg);
     void *ctx;
@@ -125,29 +126,24 @@ static inline bool chip8_display_take_reset(Chip8Display *d) {
     return r;
 }
 
-/* Selected at compile time by Makefile */
+Chip8Display *chip8_display_sdl_create(int scale);
+Chip8Display *chip8_display_curses_create(void);
+Chip8Display *chip8_display_none_create(void);
 #ifdef JEMU_GTK
 Chip8Display *chip8_display_gtk_create(int scale);
-#define chip8_display_create chip8_display_gtk_create
-#else
-Chip8Display *chip8_display_sdl_create(int scale);
-#define chip8_display_create chip8_display_sdl_create
 #endif
 
-Chip8Display *chip8_display_none_create(void);
-void          chip8_display_render(Chip8Display *d, const uint8_t *vram);
-void          chip8_display_destroy(Chip8Display *d);
+void chip8_display_render(Chip8Display *d, const uint8_t *vram);
+void chip8_display_destroy(Chip8Display *d);
 
-/* ── Input (SDL2 path only) ───────────────────────────────────────────────── */
-#ifndef JEMU_GTK
+/* ── Input ────────────────────────────────────────────────────────────────── */
 typedef struct Chip8Input Chip8Input;
 Chip8Input *chip8_input_create(void);
 bool        chip8_input_poll(Chip8Input *inp, uint8_t keys[CHIP8_NUM_KEYS],
                              bool *quit);
 void        chip8_input_destroy(Chip8Input *inp);
-#endif
 
-/* ── API ──────────────────────────────────────────────────────────────────── */
+/* ── CPU/machine API ──────────────────────────────────────────────────────── */
 /* cpu.c */
 Chip8Insn chip8_decode(uint16_t opcode);
 JemuTb   *chip8_translate_block(Chip8State *s, uint16_t pc);
