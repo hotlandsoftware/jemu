@@ -25,6 +25,10 @@ static const JemuDevDesc vgas[] = {
     {"cdp1869", "RCA CDP1869/1870 VIS tile display"},
     {"none",    "No video output"},
 };
+static const JemuDevDesc soundhws[] = {
+    {"pcspk", "Standard PC speaker / one-bit loudspeaker"},
+    {"none",  "Disable sound output"},
+};
 static const JemuArgsDef def = {
     .prog         = "jemu-rca",
     .machines     = machines, .n_machines = 3,
@@ -40,6 +44,7 @@ static const JemuArgsDef def = {
         "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"
         "  -start ADDR      Start CDP1802 execution at ADDR\n"
         "  -device NAME     Attach device      (use -device ? to list)\n"
+        "  -soundhw NAME    Sound hardware     (use -soundhw ? to list)\n"
         "\nExamples:\n"
         "  ./bin/jemu-rca -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
@@ -116,6 +121,29 @@ static bool parse_rom_arg(RcaConfig *cfg, const char *arg) {
     return add_rom(cfg, addr, path);
 }
 
+static void soundhw_list_print(void) {
+    printf("Available RCA sound hardware:\n");
+    int maxw = 0;
+    for (int i = 0; i < (int)(sizeof(soundhws) / sizeof(soundhws[0])); i++) {
+        int w = (int)strlen(soundhws[i].name);
+        if (w > maxw) maxw = w;
+    }
+    for (int i = 0; i < (int)(sizeof(soundhws) / sizeof(soundhws[0])); i++)
+        printf("  %-*s  %s\n", maxw, soundhws[i].name, soundhws[i].desc);
+}
+
+static bool parse_soundhw(const char *name, RcaSoundHwType *out) {
+    if (strcmp(name, "pcspk") == 0) {
+        *out = RCA_SOUND_PCSPK;
+        return true;
+    }
+    if (strcmp(name, "none") == 0) {
+        *out = RCA_SOUND_NONE;
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         char *fake[] = {argv[0], "-h"};
@@ -129,6 +157,7 @@ int main(int argc, char *argv[]) {
         .cpu           = RCA_CPU_CDP1802,
         .vga           = RCA_VGA_CDP1861,
         .keyboard      = RCA_KEYBOARD_VP601,
+        .sound_hw      = RCA_SOUND_PCSPK,
         .display_type  = JEMU_DISPLAY_SDL,
         .display_scale = 4,
     };
@@ -186,6 +215,20 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             rca_device_attach(&cfg, dev->keyboard);
+        } else if (strcmp(rem[i], "-soundhw") == 0) {
+            if (i + 1 >= nrem) {
+                fprintf(stderr, "jemu-rca: -soundhw requires an argument\n");
+                return 1;
+            }
+            const char *v = rem[++i];
+            if (strcmp(v, "?") == 0 || strcmp(v, "help") == 0) {
+                soundhw_list_print();
+                return 0;
+            }
+            if (!parse_soundhw(v, &cfg.sound_hw)) {
+                fprintf(stderr, "jemu-rca: unknown sound hardware '%s' (try -soundhw ?)\n", v);
+                return 1;
+            }
         } else {
             fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);
             return 1;
@@ -200,6 +243,8 @@ int main(int argc, char *argv[]) {
     cfg.display_type  = args.display_type;
     cfg.display_scale = args.display_scale;
     cfg.vnc_addr      = args.vnc_addr;
+    if (cfg.vnc_addr)
+        cfg.sound_hw = RCA_SOUND_NONE;
     if (cfg.n_roms == 0) {
         fprintf(stderr, "jemu-rca: no ROM specified — use positional arg or -rom ADDR:FILE\n");
         return 1;

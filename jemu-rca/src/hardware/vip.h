@@ -3,6 +3,7 @@
 #include "cdp1861.h"
 #include "cdp1869.h"
 #include "rca.h"
+#include "devices/pcspk.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
 #include <stdlib.h>
@@ -19,6 +20,7 @@ typedef struct RcaVipState {
     uint8_t  mem[VIP_MEM_SIZE];
     JemuMonitor *monitor;
     JemuVncServer *vnc;
+    RcaPcSpeaker *speaker;
 
     /* Pixel framebuffer: 1 byte per pixel (0 or 1), 64 wide × 128 tall */
     uint8_t  vram[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];

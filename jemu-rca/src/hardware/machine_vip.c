@@ -176,6 +176,7 @@ static void vip_sync(void *ud) {
 
 static void vip_q_out(uint8_t q, void *ud) {
     RcaVipState *s = ud;
+    rca_pcspk_set_gate(s->speaker, q);
     if (s->cfg->vga == RCA_VGA_CDP1869)
         s->vis.q = q & 1u;
 }
@@ -286,6 +287,11 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->cpu.panic_ud = s;
 
     s->monitor = jemu_monitor_create();
+    if (cfg->sound_hw == RCA_SOUND_PCSPK && !cfg->vnc_addr) {
+        s->speaker = rca_pcspk_create(250u);
+        if (!s->speaker)
+            fprintf(stderr, "jemu-rca: failed to initialize pcspk audio; continuing without sound\n");
+    }
 
     cdp1861_init(&s->vdc, vip_dma_out, s);
     cdp1869_init(&s->vis);
@@ -320,6 +326,7 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
 
 void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
     cdp1802_reset(&s->cpu);
+    rca_pcspk_set_gate(s->speaker, 0);
     cdp1861_reset(&s->vdc);
     cdp1869_reset(&s->vis);
     memset(s->vram, 0, sizeof(s->vram));
@@ -339,6 +346,7 @@ void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
 void rca_vip_destroy(RcaVipState *s) {
     if (!s) return;
     if (crash_state == s) crash_state = NULL;
+    rca_pcspk_destroy(s->speaker);
     jemu_monitor_destroy(s->monitor);
     jemu_vnc_destroy(s->vnc);
     free(s);

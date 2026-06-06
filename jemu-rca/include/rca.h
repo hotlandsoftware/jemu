@@ -27,6 +27,11 @@ typedef enum {
     RCA_KEYBOARD_BOTH,
 } RcaKeyboardType;
 
+typedef enum {
+    RCA_SOUND_NONE,
+    RCA_SOUND_PCSPK,
+} RcaSoundHwType;
+
 #define RCA_MAX_ROM_LOADS 8
 
 typedef struct {
@@ -41,6 +46,7 @@ typedef struct RcaConfig {
     RcaCpuType      cpu;
     RcaVgaType      vga;
     RcaKeyboardType keyboard;
+    RcaSoundHwType  sound_hw;
     JemuDisplayType display_type;
     int             display_scale;
     const char     *vnc_addr;
