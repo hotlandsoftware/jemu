@@ -17,6 +17,8 @@ void cdp1869_init(Cdp1869 *vis) {
     vis->page_ram_mask = CDP1869_PAGE_RAM_SIZE - 1u;
     vis->page_mask = 0x3ffu;
     vis->max_page = 480u;
+    vis->char_stride = 8u;
+    vis->block_cpu_access = true;
     vis->dirty = true;
 }
 
@@ -43,6 +45,9 @@ void cdp1869_reset(Cdp1869 *vis) {
     vis->hma = 0;
     if (vis->page_ram_mask == 0)
         vis->page_ram_mask = CDP1869_PAGE_RAM_SIZE - 1u;
+    if (vis->char_stride == 0)
+        vis->char_stride = 8u;
+    vis->block_cpu_access = true;
     vis->page_mask = 0x3ffu;
     vis->max_page = 480u;
     vis->q = 0;
@@ -52,6 +57,14 @@ void cdp1869_reset(Cdp1869 *vis) {
 
 void cdp1869_set_page_ram_mask(Cdp1869 *vis, uint16_t mask) {
     vis->page_ram_mask = mask & (CDP1869_PAGE_RAM_SIZE - 1u);
+}
+
+void cdp1869_set_char_stride(Cdp1869 *vis, uint8_t stride) {
+    vis->char_stride = stride ? stride : 8u;
+}
+
+void cdp1869_set_block_cpu_access(Cdp1869 *vis, bool block) {
+    vis->block_cpu_access = block;
 }
 
 static int get_lines(const Cdp1869 *vis) {
@@ -80,10 +93,8 @@ static uint16_t get_pma(const Cdp1869 *vis) {
 
 static uint16_t char_addr(const Cdp1869 *vis, uint16_t pma, uint8_t cma, uint8_t pmd) {
     uint8_t column = (pma & 0x400u) ? 0xffu : pmd;
-    int lines = get_lines(vis);
-    /* Multiply by lines_per_char, not a fixed shift-by-3 (which assumes 8 lines).
-     * Default CDP1869 mode is 9 lines per character, not 8. */
-    return (uint16_t)((column * lines + cma % lines) &
+    uint8_t stride = vis->char_stride ? vis->char_stride : 8u;
+    return (uint16_t)((column * stride + cma % stride) &
                       (CDP1869_CHAR_RAM_SIZE - 1u));
 }
 
@@ -93,7 +104,7 @@ static uint8_t page_read_raw(Cdp1869 *vis, uint16_t offset) {
 }
 
 uint8_t cdp1869_char_read(Cdp1869 *vis, uint16_t offset) {
-    if (!vis->non_display)
+    if (vis->block_cpu_access && !vis->non_display)
         return 0xff;
     uint8_t cma = (uint8_t)(offset & 0x0f);
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
@@ -105,7 +116,7 @@ uint8_t cdp1869_char_read(Cdp1869 *vis, uint16_t offset) {
 }
 
 void cdp1869_char_write(Cdp1869 *vis, uint16_t offset, uint8_t data) {
-    if (!vis->non_display)
+    if (vis->block_cpu_access && !vis->non_display)
         return;
     uint8_t cma = (uint8_t)(offset & 0x0f);
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
@@ -118,13 +129,13 @@ void cdp1869_char_write(Cdp1869 *vis, uint16_t offset, uint8_t data) {
 }
 
 uint8_t cdp1869_page_read(Cdp1869 *vis, uint16_t offset) {
-    if (!vis->non_display)
+    if (vis->block_cpu_access && !vis->non_display)
         return 0xff;
     return page_read_raw(vis, offset);
 }
 
 void cdp1869_page_write(Cdp1869 *vis, uint16_t offset, uint8_t data) {
-    if (!vis->non_display)
+    if (vis->block_cpu_access && !vis->non_display)
         return;
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
     vis->page_ram[pma & vis->page_ram_mask] = data;

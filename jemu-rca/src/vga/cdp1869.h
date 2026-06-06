@@ -44,6 +44,8 @@ typedef struct Cdp1869 {
     uint16_t page_ram_mask;
     uint16_t page_mask;
     uint16_t max_page;
+    uint8_t  char_stride;
+    bool     block_cpu_access;
     uint8_t  q;
     uint8_t  pcb;
     bool     dirty;
@@ -56,6 +58,8 @@ typedef struct Cdp1869 {
 void    cdp1869_init(Cdp1869 *vis);
 void    cdp1869_reset(Cdp1869 *vis);
 void    cdp1869_set_page_ram_mask(Cdp1869 *vis, uint16_t mask);
+void    cdp1869_set_char_stride(Cdp1869 *vis, uint8_t stride);
+void    cdp1869_set_block_cpu_access(Cdp1869 *vis, bool block);
 uint8_t cdp1869_char_read(Cdp1869 *vis, uint16_t offset);
 void    cdp1869_char_write(Cdp1869 *vis, uint16_t offset, uint8_t data);
 uint8_t cdp1869_page_read(Cdp1869 *vis, uint16_t offset);

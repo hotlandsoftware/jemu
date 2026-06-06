@@ -14,6 +14,7 @@ typedef struct RcaDestroyerState {
     Cdp1869 vis;
     const RcaConfig *cfg;
     uint8_t mem[DESTRYER_MEM_SIZE];
+    uint8_t rotated_bitmap[CDP1869_VISIBLE_W * CDP1869_VISIBLE_H];
     JemuMonitor *monitor;
     JemuVncServer *vnc;
 

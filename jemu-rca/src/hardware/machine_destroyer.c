@@ -5,13 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DESTRYER_CPU_HZ 3579000u
-#define DESTRYER_FRAME_HZ 50u
-#define DESTRYER_MCYCLES_PER_FRAME ((DESTRYER_CPU_HZ / CDP1802_CLOCKS_PER_MCYCLE) / DESTRYER_FRAME_HZ)
-#define DESTRYER_PAL_LINES 312u
+#define DESTROYER_CPU_HZ 3579000u
+#define DESTROYER_FRAME_HZ 50u
+#define DESTROYER_MCYCLES_PER_FRAME ((DESTROYER_CPU_HZ / CDP1802_CLOCKS_PER_MCYCLE) / DESTROYER_FRAME_HZ)
+#define DESTROYER_PAL_LINES 312u
 /* Lines-from-end constants matching emma02's nonDisplayPeriodEndLine_/preDisplayPeriodLine_ */
-#define DESTRYER_PREDISPLAY_LINE     269u   /* EF1 asserts 1 line before display */
-#define DESTRYER_NONDISPLAY_END_LINE 268u   /* non-display ends; active display begins */
+#define DESTROYER_PREDISPLAY_LINE     269u   /* EF1 asserts 1 line before display */
+#define DESTROYER_NONDISPLAY_END_LINE 268u   /* non-display ends; active display begins */
+#define DESTROYER_ROTATED_W           CDP1869_VISIBLE_H
+#define DESTROYER_ROTATED_H           CDP1869_VISIBLE_W
 
 static uint32_t destroyer_palette[72] = {
     0xFF000000u, 0xFF00FF00u, 0xFF0000FFu, 0xFF00FFFFu,
@@ -122,26 +124,30 @@ static unsigned destroyer_display_end_cycle(const Cdp1869 *vis) {
     unsigned pixel_w = vis->freshorz ? 1u : 2u;
     unsigned pixel_h = vis->fresvert ? 1u : 2u;
     unsigned non_display_end =
-        (DESTRYER_MCYCLES_PER_FRAME * DESTRYER_NONDISPLAY_END_LINE) /
-        DESTRYER_PAL_LINES;
+        (DESTROYER_MCYCLES_PER_FRAME * DESTROYER_NONDISPLAY_END_LINE) /
+        DESTROYER_PAL_LINES;
     unsigned display_period =
-        (DESTRYER_MCYCLES_PER_FRAME * CDP1869_VISIBLE_H) /
-        DESTRYER_PAL_LINES;
+        (DESTROYER_MCYCLES_PER_FRAME * CDP1869_VISIBLE_H) /
+        DESTROYER_PAL_LINES;
     return non_display_end - (display_period / (pixel_w * pixel_h));
 }
 
 static void destroyer_video_timing(RcaDestroyerState *s, unsigned frame_cycle) {
-    /* All cycle values count from frame start (0 … MCYCLES_PER_FRAME-1). */
+    /*
+     * Emma02 models VIS1870 timing with a countdown from cycleSize_ to 0.
+     * Convert that coordinate to our frame_cycle value by subtracting each
+     * VIS threshold from the frame length once.
+     */
     unsigned predisplay =
-        DESTRYER_MCYCLES_PER_FRAME -
-        ((DESTRYER_MCYCLES_PER_FRAME * DESTRYER_PREDISPLAY_LINE) /
-         DESTRYER_PAL_LINES);
+        DESTROYER_MCYCLES_PER_FRAME -
+        ((DESTROYER_MCYCLES_PER_FRAME * DESTROYER_PREDISPLAY_LINE) /
+         DESTROYER_PAL_LINES);
     unsigned non_display_end =
-        DESTRYER_MCYCLES_PER_FRAME -
-        ((DESTRYER_MCYCLES_PER_FRAME * DESTRYER_NONDISPLAY_END_LINE) /
-         DESTRYER_PAL_LINES);
-    unsigned display_end =
-        DESTRYER_MCYCLES_PER_FRAME - destroyer_display_end_cycle(&s->vis);
+        DESTROYER_MCYCLES_PER_FRAME -
+        ((DESTROYER_MCYCLES_PER_FRAME * DESTROYER_NONDISPLAY_END_LINE) /
+         DESTROYER_PAL_LINES);
+    unsigned display_end = DESTROYER_MCYCLES_PER_FRAME -
+                           destroyer_display_end_cycle(&s->vis);
 
     /* non_display: true during VBlank so CPU can access page/char RAM */
     s->vis.non_display = frame_cycle < non_display_end ||
@@ -155,6 +161,17 @@ static void destroyer_video_timing(RcaDestroyerState *s, unsigned frame_cycle) {
     /* IRQ fires at the START of VBlank (= end of active display) */
     if (frame_cycle == display_end && !s->vis.dispoff)
         cdp1802_request_irq(&s->cpu);
+}
+
+static void destroyer_rotate_bitmap(RcaDestroyerState *s) {
+    for (int y = 0; y < CDP1869_VISIBLE_H; y++) {
+        for (int x = 0; x < CDP1869_VISIBLE_W; x++) {
+            int dx = DESTROYER_ROTATED_W - 1 - y;
+            int dy = x;
+            s->rotated_bitmap[dy * DESTROYER_ROTATED_W + dx] =
+                s->vis.bitmap[y * CDP1869_VISIBLE_W + x];
+        }
+    }
 }
 
 static void destroyer_sync_inputs(RcaDestroyerState *s) {
@@ -200,13 +217,15 @@ RcaDestroyerState *rca_destroyer_create(const RcaConfig *cfg) {
     s->cpu.io_ud = s;
     cdp1869_init(&s->vis);
     cdp1869_set_page_ram_mask(&s->vis, 0x03ffu);
+    cdp1869_set_char_stride(&s->vis, 8u);
+    cdp1869_set_block_cpu_access(&s->vis, false);
     destroyer_default_inputs(s);
     destroyer_sync_inputs(s);
 
     s->monitor = jemu_monitor_create();
     if (cfg->vnc_addr) {
-        int w = (cfg->vga == RCA_VGA_CDP1869) ? CDP1869_VISIBLE_W : CDP1861_DISPLAY_W;
-        int h = (cfg->vga == RCA_VGA_CDP1869) ? CDP1869_VISIBLE_H : CDP1861_DISPLAY_H;
+        int w = (cfg->vga == RCA_VGA_CDP1869) ? DESTROYER_ROTATED_W : CDP1861_DISPLAY_W;
+        int h = (cfg->vga == RCA_VGA_CDP1869) ? DESTROYER_ROTATED_H : CDP1861_DISPLAY_H;
         s->vnc = jemu_vnc_create(cfg->vnc_addr, w * cfg->display_scale,
                                  h * cfg->display_scale);
         if (cfg->vga == RCA_VGA_CDP1869)
@@ -318,8 +337,8 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
     if (cfg->display_type == JEMU_DISPLAY_SDL) {
         if (cfg->vga == RCA_VGA_CDP1869)
             display = rca_display_sdl_create_indexed("JEMU",
-                                                     CDP1869_VISIBLE_W,
-                                                     CDP1869_VISIBLE_H,
+                                                     DESTROYER_ROTATED_W,
+                                                     DESTROYER_ROTATED_H,
                                                      cfg->display_scale,
                                                      destroyer_palette,
                                                      (int)(sizeof(destroyer_palette) /
@@ -337,7 +356,7 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
     }
 
     jemu_monitor_start(s->monitor);
-    const Uint32 frame_ms = 1000 / DESTRYER_FRAME_HZ;
+    const Uint32 frame_ms = 1000 / DESTROYER_FRAME_HZ;
     bool quit = false;
     while (!quit) {
         Uint32 t0 = SDL_GetTicks();
@@ -355,7 +374,7 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
         if (quit) break;
 
         if (!jemu_monitor_is_paused(s->monitor)) {
-            for (unsigned i = 0; i < DESTRYER_MCYCLES_PER_FRAME; i++) {
+            for (unsigned i = 0; i < DESTROYER_MCYCLES_PER_FRAME; i++) {
                 destroyer_video_timing(s, i);
                 cdp1802_step(&s->cpu);
             }
@@ -364,10 +383,11 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
             s->cpu.EF[0] = true;
             if (cfg->vga == RCA_VGA_CDP1869) {
                 cdp1869_render(&s->vis);
-                rca_display_render(display, s->vis.bitmap,
-                                   CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
-                jemu_vnc_update(s->vnc, s->vis.bitmap,
-                                CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
+                destroyer_rotate_bitmap(s);
+                rca_display_render(display, s->rotated_bitmap,
+                                   DESTROYER_ROTATED_W, DESTROYER_ROTATED_H);
+                jemu_vnc_update(s->vnc, s->rotated_bitmap,
+                                DESTROYER_ROTATED_W, DESTROYER_ROTATED_H);
             } else if (cfg->vga == RCA_VGA_CDP1861) {
                 static const uint8_t blank[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];
                 rca_display_render(display, blank,
