@@ -1,6 +1,7 @@
 #pragma once
 #include "cdp1802.h"
 #include "cdp1861.h"
+#include "cdp1869.h"
 #include "rca.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
@@ -13,6 +14,7 @@
 typedef struct RcaVipState {
     Cdp1802  cpu;
     Cdp1861  vdc;
+    Cdp1869  vis;
     const RcaConfig *cfg;
     uint8_t  mem[VIP_MEM_SIZE];
     JemuMonitor *monitor;

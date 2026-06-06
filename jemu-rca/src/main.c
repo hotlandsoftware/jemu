@@ -36,7 +36,7 @@ static const JemuArgsDef def = {
     .extra_help =
         "\nRCA options:\n"
         "  -rom ADDR:FILE   Load a ROM/blob at address ADDR; may be repeated\n"
-        "  -rom FILE        Load a ROM/blob using content-based address detection, or 0x0000\n"
+        "  -rom FILE        Load a ROM/blob using machine/content address detection, or 0x0000\n"
         "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"
         "  -start ADDR      Start CDP1802 execution at ADDR\n"
         "  -device NAME     Attach device      (use -device ? to list)\n"
@@ -45,7 +45,7 @@ static const JemuArgsDef def = {
         "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
-        "  ./bin/jemu-rca -M destroyer -rom 0x0000:roms/destroyer/des\\ a\\ 2.ic4 -rom 0x0800:roms/destroyer/des\\ b\\ 2.ic5 -rom 0x1000:roms/destroyer/des\\ c\\ 2.ic6 -rom 0x1800:roms/destroyer/des\\ d\\ 2.ic7\n"
+        "  ./bin/jemu-rca -M destroyer -rom roms/destroyer/des\\ a\\ 2.ic4 -rom roms/destroyer/des\\ b\\ 2.ic5 -rom roms/destroyer/des\\ c\\ 2.ic6 -rom roms/destroyer/des\\ d\\ 2.ic7\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
 };
 
@@ -93,7 +93,8 @@ static bool parse_rom_arg(RcaConfig *cfg, const char *arg) {
     const char *colon = strchr(arg, ':');
     if (!colon) {
         uint32_t addr = 0;
-        infer_rom_addr(arg, &addr);
+        if (!infer_rom_addr(arg, &addr) && cfg->machine == RCA_MACHINE_DESTROYER)
+            addr = (uint32_t)cfg->n_roms * 0x0800u;
         return add_rom(cfg, addr, arg);
     }
     if (colon == arg) {
@@ -141,6 +142,19 @@ int main(int argc, char *argv[]) {
     if (!jemu_args_parse(argc, argv, &def, &args, &nrem, rem))
         return 1;
 
+    if (args.machine) {
+        if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
+        else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
+        else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
+    }
+    if (args.vga) {
+        if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;
+        else if (strcmp(args.vga, "cdp1869") == 0) cfg.vga = RCA_VGA_CDP1869;
+        else if (strcmp(args.vga, "none")    == 0) cfg.vga = RCA_VGA_NONE;
+    }
+    if (cfg.machine == RCA_MACHINE_DESTROYER && !args.vga)
+        cfg.vga = RCA_VGA_CDP1869;
+
     /* RCA-specific remainder flags */
     uint32_t positional_addr = 0x0000;
     for (int i = 0; i < nrem; i++) {
@@ -177,20 +191,6 @@ int main(int argc, char *argv[]) {
     cfg.display_type  = args.display_type;
     cfg.display_scale = args.display_scale;
     cfg.vnc_addr      = args.vnc_addr;
-
-    if (args.machine) {
-        if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
-        else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
-        else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
-    }
-    if (args.vga) {
-        if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;
-        else if (strcmp(args.vga, "cdp1869") == 0) cfg.vga = RCA_VGA_CDP1869;
-        else if (strcmp(args.vga, "none")    == 0) cfg.vga = RCA_VGA_NONE;
-    }
-    if (cfg.machine == RCA_MACHINE_DESTROYER)
-        cfg.vga = RCA_VGA_CDP1869;
-
     if (cfg.n_roms == 0) {
         fprintf(stderr, "jemu-rca: no ROM specified — use positional arg or -rom ADDR:FILE\n");
         return 1;

@@ -1,4 +1,5 @@
 #include "cdp1869.h"
+#include "cdp1802.h"
 #include <string.h>
 
 #define CH_WIDTH 6
@@ -10,10 +11,12 @@
 #define CDB5 5
 #define CCB0 6
 #define CCB1 7
-
 void cdp1869_init(Cdp1869 *vis) {
     memset(vis, 0, sizeof(*vis));
     vis->non_display = true;
+    vis->page_ram_mask = CDP1869_PAGE_RAM_SIZE - 1u;
+    vis->page_mask = 0x3ffu;
+    vis->max_page = 480u;
     vis->dirty = true;
 }
 
@@ -24,6 +27,8 @@ void cdp1869_reset(Cdp1869 *vis) {
     memset(vis->bitmap, 0, sizeof(vis->bitmap));
     vis->prd = false;
     vis->non_display = true;
+    vis->lc = 0;
+    vis->mc = 0;
     vis->dispoff = false;
     vis->fresvert = false;
     vis->freshorz = false;
@@ -36,9 +41,17 @@ void cdp1869_reset(Cdp1869 *vis) {
     vis->bkg = 0;
     vis->pma = 0;
     vis->hma = 0;
+    if (vis->page_ram_mask == 0)
+        vis->page_ram_mask = CDP1869_PAGE_RAM_SIZE - 1u;
+    vis->page_mask = 0x3ffu;
+    vis->max_page = 480u;
     vis->q = 0;
     vis->pcb = 0;
     vis->dirty = true;
+}
+
+void cdp1869_set_page_ram_mask(Cdp1869 *vis, uint16_t mask) {
+    vis->page_ram_mask = mask & (CDP1869_PAGE_RAM_SIZE - 1u);
 }
 
 static int get_lines(const Cdp1869 *vis) {
@@ -47,26 +60,36 @@ static int get_lines(const Cdp1869 *vis) {
     return 8;
 }
 
-static uint16_t get_pmemsize(const Cdp1869 *vis, int cols, int rows) {
-    int pmemsize = cols * rows;
-    if (vis->dblpage) pmemsize *= 2;
-    if (vis->line16) pmemsize *= 2;
-    return (uint16_t)pmemsize;
+static int get_rows(const Cdp1869 *vis) {
+    return vis->fresvert ? 24 : 12;
+}
+
+static int get_cols(const Cdp1869 *vis) {
+    return vis->freshorz ? 40 : 20;
+}
+
+static void update_page_geometry(Cdp1869 *vis) {
+    vis->page_mask = vis->dblpage ? 0x7ffu : 0x3ffu;
+    vis->max_page = vis->dblpage ? 1920u :
+        (uint16_t)(get_rows(vis) * get_cols(vis));
 }
 
 static uint16_t get_pma(const Cdp1869 *vis) {
     return vis->dblpage ? vis->pma : (vis->pma & 0x3ffu);
 }
 
-static uint16_t char_addr(uint16_t pma, uint8_t cma, uint8_t pmd) {
+static uint16_t char_addr(const Cdp1869 *vis, uint16_t pma, uint8_t cma, uint8_t pmd) {
     uint8_t column = (pma & 0x400u) ? 0xffu : pmd;
-    return (uint16_t)(((column << 3) | (cma & 0x07u)) &
+    int lines = get_lines(vis);
+    /* Multiply by lines_per_char, not a fixed shift-by-3 (which assumes 8 lines).
+     * Default CDP1869 mode is 9 lines per character, not 8. */
+    return (uint16_t)((column * lines + cma % lines) &
                       (CDP1869_CHAR_RAM_SIZE - 1u));
 }
 
 static uint8_t page_read_raw(Cdp1869 *vis, uint16_t offset) {
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
-    return vis->page_ram[pma & (CDP1869_PAGE_RAM_SIZE - 1u)];
+    return vis->page_ram[pma & vis->page_ram_mask];
 }
 
 uint8_t cdp1869_char_read(Cdp1869 *vis, uint16_t offset) {
@@ -76,7 +99,7 @@ uint8_t cdp1869_char_read(Cdp1869 *vis, uint16_t offset) {
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
     if (vis->dblpage) cma &= 0x07u;
     uint8_t pmd = page_read_raw(vis, pma);
-    uint16_t addr = char_addr(pma, cma, pmd);
+    uint16_t addr = char_addr(vis, pma, cma, pmd);
     vis->pcb = vis->pcb_ram[addr] & 1u;
     return vis->char_ram[addr];
 }
@@ -88,7 +111,7 @@ void cdp1869_char_write(Cdp1869 *vis, uint16_t offset, uint8_t data) {
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
     if (vis->dblpage) cma &= 0x07u;
     uint8_t pmd = page_read_raw(vis, pma);
-    uint16_t addr = char_addr(pma, cma, pmd);
+    uint16_t addr = char_addr(vis, pma, cma, pmd);
     vis->char_ram[addr] = data;
     vis->pcb_ram[addr] = vis->q & 1u;
     vis->dirty = true;
@@ -104,7 +127,7 @@ void cdp1869_page_write(Cdp1869 *vis, uint16_t offset, uint8_t data) {
     if (!vis->non_display)
         return;
     uint16_t pma = vis->cmem ? get_pma(vis) : offset;
-    vis->page_ram[pma & (CDP1869_PAGE_RAM_SIZE - 1u)] = data;
+    vis->page_ram[pma & vis->page_ram_mask] = data;
     vis->dirty = true;
 }
 
@@ -116,6 +139,7 @@ void cdp1869_out(Cdp1869 *vis, uint8_t port, uint16_t ma, uint8_t data) {
         vis->dispoff = (data & 0x10u) != 0;
         vis->col = (data >> 5) & 0x03u;
         vis->freshorz = (data & 0x80u) != 0;
+        update_page_geometry(vis);
         break;
     case 4:
         break; /* sound registers only for now */
@@ -125,6 +149,7 @@ void cdp1869_out(Cdp1869 *vis, uint8_t port, uint16_t ma, uint8_t data) {
         vis->line16 = (ma & 0x0020u) != 0;
         vis->dblpage = (ma & 0x0040u) != 0;
         vis->fresvert = (ma & 0x0080u) != 0;
+        update_page_geometry(vis);
         if (vis->cmem) vis->pma = ma;
         else vis->pma = 0;
         break;
@@ -132,7 +157,7 @@ void cdp1869_out(Cdp1869 *vis, uint8_t port, uint16_t ma, uint8_t data) {
         vis->pma = ma & 0x07ffu;
         break;
     case 7:
-        vis->hma = ma & 0x07fcu;
+        vis->hma = ma & vis->page_mask & 0x07fcu;
         break;
     default:
         break;
@@ -148,7 +173,9 @@ static uint8_t get_pen(const Cdp1869 *vis, int ccb0, int ccb1, int pcb) {
     default: r = pcb; b = ccb0; g = ccb1; break;
     }
     uint8_t color = (uint8_t)((r << 2) | (b << 1) | g);
-    return color ? color : 0;
+    if (vis->cfc)
+        return (uint8_t)(color + ((vis->bkg + 1u) * 8u));
+    return color;
 }
 
 static void plot(Cdp1869 *vis, int x, int y, uint8_t color) {
@@ -177,7 +204,7 @@ static void draw_line(Cdp1869 *vis, int x, int y, uint8_t data, uint8_t color) {
 static void draw_char(Cdp1869 *vis, int x, int y, uint16_t pma) {
     uint8_t pmd = page_read_raw(vis, pma);
     for (uint8_t cma = 0; cma < get_lines(vis); cma++) {
-        uint16_t addr = char_addr(pma, cma, pmd);
+        uint16_t addr = char_addr(vis, pma, cma, pmd);
         uint8_t data = vis->char_ram[addr];
         int ccb0 = (data >> CCB0) & 1u;
         int ccb1 = (data >> CCB1) & 1u;
@@ -194,17 +221,49 @@ void cdp1869_render(Cdp1869 *vis) {
         int width = vis->freshorz ? CH_WIDTH : CH_WIDTH * 2;
         int height = get_lines(vis);
         if (!vis->fresvert) height *= 2;
-        int cols = vis->freshorz ? 40 : 20;
-        int rows = CDP1869_VISIBLE_H / height;
-        uint16_t pmemsize = get_pmemsize(vis, cols, rows);
+        int cols = get_cols(vis);
+        int rows = get_rows(vis);
         uint16_t addr = vis->hma;
+        while (addr >= vis->max_page)
+            addr = (uint16_t)(addr - vis->max_page);
         for (int sy = 0; sy < rows; sy++) {
             for (int sx = 0; sx < cols; sx++) {
                 draw_char(vis, sx * width, sy * height, addr);
                 addr++;
-                if (addr == pmemsize) addr = 0;
+                if (vis->page_mask == 0x3ffu) {
+                    if (addr >= vis->max_page) addr = 0;
+                } else {
+                    if (addr >= (uint16_t)(vis->max_page + 0x400u)) addr = 0;
+                }
             }
         }
     }
     vis->dirty = false;
+}
+
+void cdp1869_sync(Cdp1869 *vis, Cdp1802 *cpu) {
+    uint16_t lc = vis->lc;
+    uint8_t  mc = vis->mc;
+
+    /*
+     * non_display: true during VBlank (lines 0..DISPLAY_START-1 and
+     * DISPLAY_END..LINES_TOTAL-1) so the CPU can write to page/char RAM.
+     * false during active display so the 1869 owns the data bus.
+     */
+    vis->non_display = (lc < CDP1869_DISPLAY_START || lc >= CDP1869_DISPLAY_END);
+
+    /*
+     * Interrupt at line CDP1869_INT_LINE, machine cycle 2.
+     * This fires near the start of VBlank, giving the CPU time to update
+     * page RAM before the display period begins at line CDP1869_DISPLAY_START.
+     */
+    if (lc == CDP1869_INT_LINE && mc == 2)
+        cdp1802_request_irq(cpu);
+
+    /* Advance scan-line and machine-cycle counters. */
+    if (++vis->mc == CDP1869_MCYCLES_PER_LINE) {
+        vis->mc = 0;
+        if (++vis->lc == CDP1869_LINES_TOTAL)
+            vis->lc = 0;
+    }
 }

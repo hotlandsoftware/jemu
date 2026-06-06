@@ -11,6 +11,11 @@
 
 static RcaVipState *crash_state;
 
+static const uint32_t vip_vis_palette[8] = {
+    0xFF000000u, 0xFF00FF00u, 0xFF0000FFu, 0xFF00FFFFu,
+    0xFFFF0000u, 0xFFFFFF00u, 0xFFFF00FFu, 0xFFFFFFFFu,
+};
+
 static const char *cpu_state_name(Cdp1802CycleState state) {
     switch (state) {
     case CDP1802_S_EXECUTE:   return "EXECUTE";
@@ -135,15 +140,44 @@ static void vip_dma_out(uint8_t *data, void *ud) {
 
 /* ── CPU I/O callbacks ───────────────────────────────────────────────────── */
 
+static uint8_t vip_mem_read(uint16_t addr, void *ud) {
+    RcaVipState *s = ud;
+    if (s->cfg->vga == RCA_VGA_CDP1869) {
+        if (addr >= 0xf400 && addr <= 0xf7ff)
+            return cdp1869_char_read(&s->vis, (uint16_t)(addr - 0xf400));
+        if (addr >= 0xf800)
+            return cdp1869_page_read(&s->vis, (uint16_t)(addr - 0xf800));
+    }
+    return s->mem[addr];
+}
+
+static void vip_mem_write(uint16_t addr, uint8_t val, void *ud) {
+    RcaVipState *s = ud;
+    if (s->cfg->vga == RCA_VGA_CDP1869) {
+        if (addr >= 0xf400 && addr <= 0xf7ff) {
+            cdp1869_char_write(&s->vis, (uint16_t)(addr - 0xf400), val);
+            return;
+        }
+        if (addr >= 0xf800) {
+            cdp1869_page_write(&s->vis, (uint16_t)(addr - 0xf800), val);
+            return;
+        }
+    }
+    s->mem[addr] = val;
+}
+
 static void vip_sync(void *ud) {
     RcaVipState *s = ud;
-    cdp1861_sync(&s->vdc, &s->cpu);
+    if (s->cfg->vga == RCA_VGA_CDP1861)
+        cdp1861_sync(&s->vdc, &s->cpu);
+    else if (s->cfg->vga == RCA_VGA_CDP1869)
+        cdp1869_sync(&s->vis, &s->cpu);
 }
 
 static void vip_q_out(uint8_t q, void *ud) {
-    /* Q output drives the audio tone generator on COSMAC VIP, not the display.
-     * Audio is not yet implemented; this is a placeholder. */
-    (void)q; (void)ud;
+    RcaVipState *s = ud;
+    if (s->cfg->vga == RCA_VGA_CDP1869)
+        s->vis.q = q & 1u;
 }
 
 static uint8_t vip_io_in(uint8_t port, void *ud) {
@@ -154,7 +188,8 @@ static uint8_t vip_io_in(uint8_t port, void *ud) {
          * display-enable pin.  The instruction simultaneously reads the hex keypad
          * value off the bus (0x0-0xF, or 0xFF if no key is pressed).
          */
-        cdp1861_set_display(&s->vdc, true);
+        if (s->cfg->vga == RCA_VGA_CDP1861)
+            cdp1861_set_display(&s->vdc, true);
         if (!rca_vip_has_keypad(s->cfg))
             return 0xFF;
         return (s->key_down >= 0) ? (uint8_t)s->key_down : 0xFF;
@@ -180,7 +215,10 @@ static void vip_io_out(uint8_t port, uint8_t val, void *ud) {
     (void)val;
     if (port == 1) {
         /* OUT 1 on the COSMAC VIP disables the CDP1861 display. */
-        cdp1861_set_display(&s->vdc, false);
+        if (s->cfg->vga == RCA_VGA_CDP1861)
+            cdp1861_set_display(&s->vdc, false);
+    } else if (s->cfg->vga == RCA_VGA_CDP1869 && port >= 3 && port <= 7) {
+        cdp1869_out(&s->vis, port, s->cpu.memory_addr, val);
     }
 }
 
@@ -241,6 +279,8 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->cpu.q_out   = vip_q_out;
     s->cpu.io_in   = vip_io_in;
     s->cpu.io_out  = vip_io_out;
+    s->cpu.mem_read = vip_mem_read;
+    s->cpu.mem_write = vip_mem_write;
     s->cpu.io_ud   = s;
     s->cpu.panic   = vip_cpu_panic;
     s->cpu.panic_ud = s;
@@ -248,11 +288,16 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->monitor = jemu_monitor_create();
 
     cdp1861_init(&s->vdc, vip_dma_out, s);
+    cdp1869_init(&s->vis);
     if (cfg->vnc_addr) {
-        s->vnc = jemu_vnc_create(cfg->vnc_addr,
-                                 CDP1861_DISPLAY_W * cfg->display_scale,
-                                 CDP1861_DISPLAY_H * cfg->display_scale);
-        jemu_vnc_set_colors(s->vnc, 0xFFFFFFu, 0x100080u);
+        int w = (cfg->vga == RCA_VGA_CDP1869) ? CDP1869_VISIBLE_W : CDP1861_DISPLAY_W;
+        int h = (cfg->vga == RCA_VGA_CDP1869) ? CDP1869_VISIBLE_H : CDP1861_DISPLAY_H;
+        s->vnc = jemu_vnc_create(cfg->vnc_addr, w * cfg->display_scale,
+                                 h * cfg->display_scale);
+        if (cfg->vga == RCA_VGA_CDP1861)
+            jemu_vnc_set_colors(s->vnc, 0xFFFFFFu, 0x100080u);
+        else if (cfg->vga == RCA_VGA_CDP1869)
+            jemu_vnc_set_palette(s->vnc, vip_vis_palette, 8);
     }
 
     s->key_down = -1;
@@ -276,6 +321,7 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
 void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
     cdp1802_reset(&s->cpu);
     cdp1861_reset(&s->vdc);
+    cdp1869_reset(&s->vis);
     memset(s->vram, 0, sizeof(s->vram));
     s->draw_flag = true;
     s->key_down  = -1;
@@ -306,7 +352,15 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
     RcaDisplay *display;
     switch (cfg->display_type) {
     case JEMU_DISPLAY_SDL:
-        display = rca_display_sdl_create(cfg->display_scale);
+        if (cfg->vga == RCA_VGA_CDP1869)
+            display = rca_display_sdl_create_indexed("JEMU", CDP1869_VISIBLE_W,
+                                                     CDP1869_VISIBLE_H,
+                                                     cfg->display_scale,
+                                                     vip_vis_palette, 8);
+        else if (cfg->vga == RCA_VGA_NONE)
+            display = rca_display_none_create();
+        else
+            display = rca_display_sdl_create(cfg->display_scale);
         break;
     default:
         display = rca_display_none_create();
@@ -325,8 +379,11 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         return;
     }
 
-    /* SDL2 run loop */
-    const Uint32 frame_ms = 1000 / 60;
+    /* SDL2 run loop — PAL (CDP1869) runs at 50 Hz / 4368 mcycles; NTSC at 60 Hz / 3668 */
+    const bool is_pal = (cfg->vga == RCA_VGA_CDP1869);
+    const Uint32 frame_ms = is_pal ? 20u : 16u;
+    const int mcycles_per_frame = is_pal ? CDP1869_MCYCLES_PER_FRAME
+                                         : CDP1861_MCYCLES_PER_FRAME;
     jemu_monitor_start(s->monitor);
     if (rca_vip_has_vp601(cfg))
         SDL_StartTextInput();
@@ -409,8 +466,8 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
             continue;
         }
 
-        /* ── Execute one NTSC frame worth of machine cycles ── */
-        for (int i = 0; i < CDP1861_MCYCLES_PER_FRAME; i++) {
+        /* ── Execute one frame worth of machine cycles ── */
+        for (int i = 0; i < mcycles_per_frame; i++) {
             s->cpu.EF[1] = !s->ef2_down;
             s->cpu.EF[2] = !rca_vip_has_vp601(cfg) || s->ascii_key < 0;
             s->cpu.EF[3] = !vip_ascii_pending(s) &&
@@ -419,7 +476,13 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         }
 
         /* ── Render ── */
-        if (s->draw_flag) {
+        if (cfg->vga == RCA_VGA_CDP1869) {
+            cdp1869_render(&s->vis);
+            rca_display_render(display, s->vis.bitmap,
+                               CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
+            jemu_vnc_update(s->vnc, s->vis.bitmap,
+                            CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
+        } else if (s->draw_flag && cfg->vga == RCA_VGA_CDP1861) {
             rca_display_render(display, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
             jemu_vnc_update(s->vnc, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
             s->draw_flag = false;

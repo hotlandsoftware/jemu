@@ -21,6 +21,8 @@ struct JemuVncServer {
     uint32_t        queued_keysym;
     uint32_t        fg_rgb;
     uint32_t        bg_rgb;
+    uint32_t        palette[256];
+    int             n_colors;
 };
 
 /* X11 keysyms matching the SDL/GTK CHIP-8 keypad layout:
@@ -131,14 +133,20 @@ static bool vnc_send_update(JemuVncServer *vnc, int fd, const PixFmt *fmt) {
     int vw = vnc->vram_w, vh = vnc->vram_h;
     uint8_t *vsnap = (vw > 0 && vh > 0) ? malloc((size_t)(vw * vh)) : NULL;
     if (vsnap) memcpy(vsnap, vnc->fb, (size_t)(vw * vh));
+    uint32_t palette[256];
+    int n_colors = vnc->n_colors;
+    if (n_colors > 0)
+        memcpy(palette, vnc->palette, (size_t)n_colors * sizeof(palette[0]));
+    uint32_t fg_rgb = vnc->fg_rgb;
+    uint32_t bg_rgb = vnc->bg_rgb;
     pthread_mutex_unlock(&vnc->lock);
 
     size_t out_sz = (size_t)(npix * fmt->bytes_pp);
     uint8_t *out  = malloc(out_sz);
     if (!out) { free(vsnap); return false; }
 
-    uint32_t fg = pack_rgb(fmt, vnc->fg_rgb);
-    uint32_t bg = pack_rgb(fmt, vnc->bg_rgb);
+    uint32_t fg = pack_rgb(fmt, fg_rgb);
+    uint32_t bg = pack_rgb(fmt, bg_rgb);
     for (int i = 0; i < npix; i++)
         write_pixel(out + i * fmt->bytes_pp, bg, fmt->bytes_pp, fmt->big_endian);
 
@@ -146,7 +154,12 @@ static bool vnc_send_update(JemuVncServer *vnc, int fd, const PixFmt *fmt) {
         for (int y = 0; y < vnc->fb_h; y++) {
             for (int x = 0; x < vnc->fb_w; x++) {
                 int sx = x * vw / vnc->fb_w, sy = y * vh / vnc->fb_h;
-                uint32_t px = vsnap[sy * vw + sx] ? fg : bg;
+                uint8_t idx = vsnap[sy * vw + sx];
+                uint32_t px = idx ? fg : bg;
+                if (n_colors > 0) {
+                    if (idx >= n_colors) idx = (uint8_t)(n_colors - 1);
+                    px = pack_rgb(fmt, palette[idx] & 0xFFFFFFu);
+                }
                 write_pixel(out + (y * vnc->fb_w + x) * fmt->bytes_pp,
                             px, fmt->bytes_pp, fmt->big_endian);
             }
@@ -284,6 +297,24 @@ void jemu_vnc_set_colors(JemuVncServer *vnc, uint32_t fg_rgb, uint32_t bg_rgb) {
     pthread_mutex_lock(&vnc->lock);
     vnc->fg_rgb = fg_rgb & 0xFFFFFFu;
     vnc->bg_rgb = bg_rgb & 0xFFFFFFu;
+    vnc->n_colors = 0;
+    pthread_mutex_unlock(&vnc->lock);
+}
+
+void jemu_vnc_set_palette(JemuVncServer *vnc,
+                          const uint32_t *palette, int n_colors) {
+    if (!vnc) return;
+    if (!palette || n_colors <= 0) {
+        pthread_mutex_lock(&vnc->lock);
+        vnc->n_colors = 0;
+        pthread_mutex_unlock(&vnc->lock);
+        return;
+    }
+    if (n_colors > 256) n_colors = 256;
+    pthread_mutex_lock(&vnc->lock);
+    for (int i = 0; i < n_colors; i++)
+        vnc->palette[i] = palette[i] & 0xFFFFFFu;
+    vnc->n_colors = n_colors;
     pthread_mutex_unlock(&vnc->lock);
 }
 

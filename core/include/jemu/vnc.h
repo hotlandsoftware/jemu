@@ -10,9 +10,12 @@ JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h);
 void           jemu_vnc_destroy(JemuVncServer *vnc);
 void           jemu_vnc_set_colors(JemuVncServer *vnc,
                                    uint32_t fg_rgb, uint32_t bg_rgb);
+void           jemu_vnc_set_palette(JemuVncServer *vnc,
+                                    const uint32_t *palette, int n_colors);
 
 /* Called whenever the guest's display changes.
- * vram: 1 byte/pixel (0=black, non-zero=white), vw*vh bytes  */
+ * vram: 1 byte/pixel. Without a palette: 0=background, non-zero=foreground.
+ * With a palette: byte values index the configured RGB table. */
 void           jemu_vnc_update(JemuVncServer *vnc,
                                const uint8_t *vram, int vw, int vh);
 
