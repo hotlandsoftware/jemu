@@ -4,6 +4,11 @@
 
 typedef struct JemuVncServer JemuVncServer;
 
+typedef struct {
+    uint32_t keysym;
+    bool     down;
+} JemuVncKeyEvent;
+
 /* addr: "host:display" or ":display"  (port = 5900 + display)
  * fb_w/fb_h: framebuffer dimensions in pixels                */
 JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h);
@@ -25,3 +30,7 @@ void           jemu_vnc_get_keys(JemuVncServer *vnc, uint8_t keys[16]);
 
 /* Return one queued RFB keysym, or 0 if no key event is waiting. */
 uint32_t       jemu_vnc_pop_keysym(JemuVncServer *vnc);
+
+/* Return one queued RFB key press/release event. */
+bool           jemu_vnc_pop_key_event(JemuVncServer *vnc,
+                                      JemuVncKeyEvent *event);

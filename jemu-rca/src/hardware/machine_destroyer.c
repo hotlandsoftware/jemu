@@ -309,24 +309,22 @@ static void destroyer_poll_sdl(RcaDestroyerState *s, bool *quit) {
 }
 
 static void destroyer_poll_vnc(RcaDestroyerState *s) {
-    uint32_t sym;
-    while ((sym = jemu_vnc_pop_keysym(s->vnc)) != 0) {
-        switch (sym) {
-        case '1': s->start1 = true; break;
-        case '2': s->start2 = true; break;
-        case ' ': s->fire = true; break;
+    JemuVncKeyEvent ev;
+    while (jemu_vnc_pop_key_event(s->vnc, &ev)) {
+        switch (ev.keysym) {
+        case '1': s->start1 = ev.down; break;
+        case '2': s->start2 = ev.down; break;
+        case ' ': s->fire = ev.down; break;
         case '5':
         case 'a':
-        case 'A':
-            s->coin1_latch = 15;
+            if (ev.down) s->coin1_latch = 15;
             break;
         case '6':
         case 'b':
-        case 'B':
-            s->coin2_latch = 15;
+            if (ev.down) s->coin2_latch = 15;
             break;
-        case 0xff51: s->left = true; break;  /* Left */
-        case 0xff53: s->right = true; break; /* Right */
+        case 0xff51: s->left = ev.down; break;  /* Left */
+        case 0xff53: s->right = ev.down; break; /* Right */
         default: break;
         }
     }

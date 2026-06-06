@@ -9,6 +9,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define JEMU_VNC_KEY_QUEUE_CAP 64u
+
 struct JemuVncServer {
     int             listen_fd;
     pthread_t       thread;
@@ -19,6 +21,10 @@ struct JemuVncServer {
     bool            running;
     uint8_t         keys[16];    /* CHIP-8 key state from VNC clients */
     uint32_t        queued_keysym;
+    JemuVncKeyEvent key_queue[JEMU_VNC_KEY_QUEUE_CAP];
+    unsigned        key_head, key_count;
+    uint32_t        held_keysyms[JEMU_VNC_KEY_QUEUE_CAP];
+    unsigned        held_count;
     uint32_t        fg_rgb;
     uint32_t        bg_rgb;
     uint32_t        palette[256];
@@ -36,6 +42,44 @@ static const uint32_t chip8_keysyms[16] = {
     0x73, /* 8 → s */  0x64, /* 9 → d */  0x7a, /* A → z */  0x63, /* B → c */
     0x34, /* C → 4 */  0x72, /* D → r */  0x66, /* E → f */  0x76, /* F → v */
 };
+
+static void enqueue_key_event(JemuVncServer *vnc, uint32_t keysym, bool down) {
+    if (vnc->key_count == JEMU_VNC_KEY_QUEUE_CAP) {
+        vnc->key_head = (vnc->key_head + 1u) % JEMU_VNC_KEY_QUEUE_CAP;
+        vnc->key_count--;
+    }
+
+    unsigned idx = (vnc->key_head + vnc->key_count) % JEMU_VNC_KEY_QUEUE_CAP;
+    vnc->key_queue[idx] = (JemuVncKeyEvent){
+        .keysym = keysym,
+        .down = down,
+    };
+    vnc->key_count++;
+}
+
+static void update_held_key(JemuVncServer *vnc, uint32_t keysym, bool down) {
+    for (unsigned i = 0; i < vnc->held_count; i++) {
+        if (vnc->held_keysyms[i] != keysym)
+            continue;
+        if (!down) {
+            vnc->held_count--;
+            vnc->held_keysyms[i] = vnc->held_keysyms[vnc->held_count];
+        }
+        return;
+    }
+
+    if (down && vnc->held_count < JEMU_VNC_KEY_QUEUE_CAP)
+        vnc->held_keysyms[vnc->held_count++] = keysym;
+}
+
+static void release_held_keys(JemuVncServer *vnc) {
+    pthread_mutex_lock(&vnc->lock);
+    for (unsigned i = 0; i < vnc->held_count; i++)
+        enqueue_key_event(vnc, vnc->held_keysyms[i], false);
+    vnc->held_count = 0;
+    memset(vnc->keys, 0, sizeof(vnc->keys));
+    pthread_mutex_unlock(&vnc->lock);
+}
 
 /* ── I/O helpers ─────────────────────────────────────────────────────────── */
 
@@ -207,6 +251,8 @@ static void vnc_handle_client(JemuVncServer *vnc, int fd) {
             uint32_t raw_sym = sym;
             if (sym >= 0x41 && sym <= 0x5A) sym |= 0x20; /* normalize to lowercase */
             pthread_mutex_lock(&vnc->lock);
+            enqueue_key_event(vnc, sym, down != 0);
+            update_held_key(vnc, sym, down != 0);
             if (down) vnc->queued_keysym = raw_sym;
             for (int k = 0; k < 16; k++)
                 if (chip8_keysyms[k] == sym) { vnc->keys[k] = down; break; }
@@ -244,6 +290,7 @@ static void *vnc_thread(void *arg) {
         if (cfd < 0) continue;
         printf("vnc: client connected\n");
         vnc_handle_client(vnc, cfd);
+        release_held_keys(vnc);
         printf("vnc: client disconnected\n");
         close(cfd);
     }
@@ -342,6 +389,20 @@ uint32_t jemu_vnc_pop_keysym(JemuVncServer *vnc) {
     vnc->queued_keysym = 0;
     pthread_mutex_unlock(&vnc->lock);
     return sym;
+}
+
+bool jemu_vnc_pop_key_event(JemuVncServer *vnc, JemuVncKeyEvent *event) {
+    if (!vnc || !event) return false;
+    pthread_mutex_lock(&vnc->lock);
+    if (vnc->key_count == 0) {
+        pthread_mutex_unlock(&vnc->lock);
+        return false;
+    }
+    *event = vnc->key_queue[vnc->key_head];
+    vnc->key_head = (vnc->key_head + 1u) % JEMU_VNC_KEY_QUEUE_CAP;
+    vnc->key_count--;
+    pthread_mutex_unlock(&vnc->lock);
+    return true;
 }
 
 void jemu_vnc_update(JemuVncServer *vnc,
