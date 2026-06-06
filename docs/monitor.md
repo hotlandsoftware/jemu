@@ -26,3 +26,11 @@ Resumes the emulator if it was stopped or halted.
 > ``step`` / ``s``
 
 Executes one instruction
+
+> ``dipswitch list``
+
+Lists machine-specific DIP switches (when supported by the active machine)
+
+> ``dipswitch (name) (value)``
+
+Sets a machine-specific DIP switch (when supported by the active machine)

@@ -127,6 +127,7 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                 if      (cmd == JEMU_MON_QUIT)  running = false;
                 else if (cmd == JEMU_MON_RESET) chip8_machine_reset(s, cfg);
                 else if (cmd == JEMU_MON_STEP)  chip8_exec_single(s);
+                else if (cmd == JEMU_MON_CUSTOM) jemu_monitor_unknown_command(s->monitor);
             }
             if (!running || jemu_monitor_is_paused(s->monitor)) {
                 nanosleep(&ts, NULL);
@@ -195,6 +196,7 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
             if      (cmd == JEMU_MON_QUIT)  quit = true;
             else if (cmd == JEMU_MON_RESET) chip8_machine_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP)  chip8_exec_single(s);
+            else if (cmd == JEMU_MON_CUSTOM) jemu_monitor_unknown_command(s->monitor);
         }
         if (quit) break;
 

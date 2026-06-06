@@ -15,13 +15,4 @@ make GTK=1 # for GTK support
 ```
 
 # Targets
-
-## CPUs/Machines
-See machines.md
-
-## Interpreters
-Direct bytecode execution (no hardware model)
-
-| ISA    | Binary        | Status  | Notes              |
-|--------|---------------|---------|--------------------|
-| CHIP-8 | `jemu-chip8`  | Working | No audio yet       |
+See MACHINES.md

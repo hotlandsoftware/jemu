@@ -154,6 +154,8 @@ int main(int argc, char *argv[]) {
     }
     if (cfg.machine == RCA_MACHINE_DESTROYER && !args.vga)
         cfg.vga = RCA_VGA_CDP1869;
+    if (cfg.machine == RCA_MACHINE_DESTROYER)
+        cfg.keyboard = RCA_KEYBOARD_NONE;
 
     /* RCA-specific remainder flags */
     uint32_t positional_addr = 0x0000;
@@ -166,17 +168,24 @@ int main(int argc, char *argv[]) {
             cfg.start_addr = (uint16_t)strtoul(rem[++i], NULL, 0);
             cfg.has_start_addr = true;
         } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
-            RcaKeyboardType dev;
             const char *v = rem[++i];
             if (strcmp(v, "?") == 0 || strcmp(v, "help") == 0) {
                 rca_device_list_print();
                 return 0;
             }
-            if (!rca_device_parse(v, &dev)) {
+            const RcaDeviceDesc *dev = rca_device_find(v);
+            if (!dev) {
                 fprintf(stderr, "jemu-rca: unknown device '%s' (try -device ?)\n", v);
                 return 1;
             }
-            rca_device_attach(&cfg, dev);
+            if (!rca_device_supports_machine(dev, cfg.machine)) {
+                char machines[96];
+                rca_device_supported_machines(dev, machines, sizeof(machines));
+                fprintf(stderr, "jemu-rca: %s device is only supported by %s\n",
+                        dev->name, machines);
+                return 1;
+            }
+            rca_device_attach(&cfg, dev->keyboard);
         } else {
             fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);
             return 1;

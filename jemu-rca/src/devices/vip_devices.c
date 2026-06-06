@@ -2,11 +2,23 @@
 #include <stdio.h>
 #include <string.h>
 
+#define RCA_MACHINE_F(machine) (1u << (machine))
+#define RCA_DEVICE_VIP_ONLY RCA_MACHINE_F(RCA_MACHINE_COSMAC_VIP)
+
 static const RcaDeviceDesc devices[] = {
-    {"vp601",      "RCA COSMAC VIP VP601 ASCII/QWERTY keyboard", RCA_KEYBOARD_VP601},
-    {"vip-keypad", "COSMAC VIP 16-key hexadecimal keypad",       RCA_KEYBOARD_KEYPAD},
-    {"keypad",     "Alias for vip-keypad",                       RCA_KEYBOARD_KEYPAD},
+    {"vp601",      "RCA COSMAC VIP VP601 ASCII/QWERTY keyboard", RCA_KEYBOARD_VP601, RCA_DEVICE_VIP_ONLY},
+    {"vip-keypad", "COSMAC VIP 16-key hexadecimal keypad",       RCA_KEYBOARD_KEYPAD, RCA_DEVICE_VIP_ONLY},
+    {"keypad",     "Alias for vip-keypad",                       RCA_KEYBOARD_KEYPAD, RCA_DEVICE_VIP_ONLY},
 };
+
+static const char *rca_machine_type_name(RcaMachineType machine) {
+    switch (machine) {
+    case RCA_MACHINE_GENERIC:    return "generic";
+    case RCA_MACHINE_COSMAC_VIP: return "cosmac-vip";
+    case RCA_MACHINE_DESTROYER:  return "destroyer";
+    default:                     return "unknown";
+    }
+}
 
 const RcaDeviceDesc *rca_device_list(int *count) {
     if (count)
@@ -24,20 +36,54 @@ void rca_device_list_print(void) {
     }
 
     printf("Available RCA devices:\n");
-    for (int i = 0; i < n; i++)
-        printf("  %-*s  %s\n", maxw, devs[i].name, devs[i].desc);
+    for (int i = 0; i < n; i++) {
+        char machines[96];
+        rca_device_supported_machines(&devs[i], machines, sizeof(machines));
+        printf("  %-*s  %s [%s]\n", maxw, devs[i].name, devs[i].desc, machines);
+    }
 }
 
-bool rca_device_parse(const char *name, RcaKeyboardType *out) {
+const RcaDeviceDesc *rca_device_find(const char *name) {
     int n = 0;
     const RcaDeviceDesc *devs = rca_device_list(&n);
     for (int i = 0; i < n; i++) {
-        if (strcmp(name, devs[i].name) == 0) {
-            if (out) *out = devs[i].keyboard;
-            return true;
-        }
+        if (strcmp(name, devs[i].name) == 0)
+            return &devs[i];
+    }
+    return NULL;
+}
+
+bool rca_device_parse(const char *name, RcaKeyboardType *out) {
+    const RcaDeviceDesc *dev = rca_device_find(name);
+    if (dev) {
+        if (out) *out = dev->keyboard;
+        return true;
     }
     return false;
+}
+
+bool rca_device_supports_machine(const RcaDeviceDesc *dev, RcaMachineType machine) {
+    return dev && (dev->supported_machines & RCA_MACHINE_F(machine)) != 0;
+}
+
+void rca_device_supported_machines(const RcaDeviceDesc *dev, char *buf, size_t len) {
+    if (!buf || len == 0)
+        return;
+    buf[0] = '\0';
+    if (!dev)
+        return;
+
+    bool first = true;
+    for (int machine = RCA_MACHINE_GENERIC; machine <= RCA_MACHINE_DESTROYER; machine++) {
+        if ((dev->supported_machines & RCA_MACHINE_F(machine)) == 0)
+            continue;
+        size_t used = strlen(buf);
+        int n = snprintf(buf + used, len - used, "%s%s",
+                         first ? "" : ", ", rca_machine_type_name((RcaMachineType)machine));
+        if (n < 0 || (size_t)n >= len - used)
+            break;
+        first = false;
+    }
 }
 
 void rca_device_attach(RcaConfig *cfg, RcaKeyboardType dev) {

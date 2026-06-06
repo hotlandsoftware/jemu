@@ -457,6 +457,7 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
             if      (cmd == JEMU_MON_QUIT)  quit = true;
             else if (cmd == JEMU_MON_RESET) rca_vip_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP)  vip_step_instruction(s);
+            else if (cmd == JEMU_MON_CUSTOM) jemu_monitor_unknown_command(s->monitor);
         }
         if (quit) break;
 

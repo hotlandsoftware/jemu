@@ -3,17 +3,22 @@
 #include "rca.h"
 #include <SDL2/SDL.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
     const char *name;
     const char *desc;
     RcaKeyboardType keyboard;
+    uint32_t supported_machines;
 } RcaDeviceDesc;
 
 const RcaDeviceDesc *rca_device_list(int *count);
 void rca_device_list_print(void);
+const RcaDeviceDesc *rca_device_find(const char *name);
 bool rca_device_parse(const char *name, RcaKeyboardType *out);
+bool rca_device_supports_machine(const RcaDeviceDesc *dev, RcaMachineType machine);
+void rca_device_supported_machines(const RcaDeviceDesc *dev, char *buf, size_t len);
 void rca_device_attach(RcaConfig *cfg, RcaKeyboardType dev);
 
 bool rca_vip_has_keypad(const RcaConfig *cfg);

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define DESTROYER_CPU_HZ 3579000u
 #define DESTROYER_FRAME_HZ 50u
@@ -18,6 +19,59 @@
 static uint32_t destroyer_palette[72] = {
     0xFF000000u, 0xFF00FF00u, 0xFF0000FFu, 0xFF00FFFFu,
     0xFFFF0000u, 0xFFFFFF00u, 0xFFFF00FFu, 0xFFFFFFFFu,
+};
+
+typedef struct {
+    const char *value;
+    const char *desc;
+    uint8_t bits;
+} DestroyerDipOption;
+
+typedef struct {
+    const char *name;
+    const char *desc;
+    uint8_t mask;
+    const DestroyerDipOption *options;
+    size_t n_options;
+} DestroyerDip;
+
+static const DestroyerDipOption destroyer_difficulty_opts[] = {
+    {"very-hard", "Very hard", 0x00},
+    {"hard",      "Hard",      0x01},
+    {"easy",      "Easy",      0x02},
+    {"very-easy", "Very easy", 0x03},
+};
+
+static const DestroyerDipOption destroyer_bonus_opts[] = {
+    {"5000",  "5000",  0x0c},
+    {"7000",  "7000",  0x08},
+    {"10000", "10000", 0x04},
+    {"14000", "14000", 0x00},
+};
+
+static const DestroyerDipOption destroyer_lives_opts[] = {
+    {"1", "1", 0x30},
+    {"2", "2", 0x20},
+    {"3", "3", 0x10},
+    {"4", "4", 0x00},
+};
+
+static const DestroyerDipOption destroyer_coinage_opts[] = {
+    {"a1-b2",     "Slot A: 1, Slot B: 2",     0xc0},
+    {"a1.5-b3",   "Slot A: 1.5, Slot B: 3",   0x80},
+    {"a2-b4",     "Slot A: 2, Slot B: 4",     0x40},
+    {"a2.5-b5",   "Slot A: 2.5, Slot B: 5",   0x00},
+};
+
+static const DestroyerDip destroyer_dips[] = {
+    {"difficulty", "Difficulty", 0x03, destroyer_difficulty_opts,
+     sizeof(destroyer_difficulty_opts) / sizeof(destroyer_difficulty_opts[0])},
+    {"bonus", "Bonus life", 0x0c, destroyer_bonus_opts,
+     sizeof(destroyer_bonus_opts) / sizeof(destroyer_bonus_opts[0])},
+    {"lives", "Lives", 0x30, destroyer_lives_opts,
+     sizeof(destroyer_lives_opts) / sizeof(destroyer_lives_opts[0])},
+    {"coinage", "Coinage", 0xc0, destroyer_coinage_opts,
+     sizeof(destroyer_coinage_opts) / sizeof(destroyer_coinage_opts[0])},
 };
 
 static uint8_t destroyer_mem_read(uint16_t addr, void *ud) {
@@ -112,6 +166,104 @@ static void destroyer_init_palette(void) {
         for (int l = 0; l < 8; l++, i++)
             destroyer_palette[i] = cdp1869_rgb(c, l);
     init = true;
+}
+
+static const DestroyerDip *destroyer_find_dip(const char *name) {
+    for (size_t i = 0; i < sizeof(destroyer_dips) / sizeof(destroyer_dips[0]); i++)
+        if (strcasecmp(name, destroyer_dips[i].name) == 0)
+            return &destroyer_dips[i];
+    return NULL;
+}
+
+static const DestroyerDipOption *destroyer_current_dip_option(
+    const RcaDestroyerState *s, const DestroyerDip *dip) {
+    uint8_t bits = s->in1 & dip->mask;
+    for (size_t i = 0; i < dip->n_options; i++)
+        if (dip->options[i].bits == bits)
+            return &dip->options[i];
+    return NULL;
+}
+
+static void destroyer_list_dips(const RcaDestroyerState *s) {
+    printf("Destroyer DIP switches:\n");
+    for (size_t i = 0; i < sizeof(destroyer_dips) / sizeof(destroyer_dips[0]); i++) {
+        const DestroyerDip *dip = &destroyer_dips[i];
+        const DestroyerDipOption *cur = destroyer_current_dip_option(s, dip);
+        printf("  %-10s %-12s current: %s\n", dip->name, dip->desc,
+               cur ? cur->value : "unknown");
+        printf("             values:");
+        for (size_t j = 0; j < dip->n_options; j++)
+            printf(" %s", dip->options[j].value);
+        printf("\n");
+    }
+}
+
+static bool destroyer_parse_raw_dip_value(const char *text, uint8_t mask,
+                                          uint8_t *bits) {
+    if (!text || !*text)
+        return false;
+    char *end = NULL;
+    unsigned long v = strtoul(text, &end, 0);
+    if (!end || *end != '\0' || v > 0xffu)
+        return false;
+    *bits = (uint8_t)v & mask;
+    return true;
+}
+
+static bool destroyer_set_dip(RcaDestroyerState *s, const char *name,
+                              const char *value) {
+    const DestroyerDip *dip = destroyer_find_dip(name);
+    if (!dip) {
+        printf("unknown DIP switch '%s' (try 'dipswitch list')\n", name);
+        return true;
+    }
+
+    uint8_t bits = 0;
+    bool found = false;
+    for (size_t i = 0; i < dip->n_options; i++) {
+        if (strcasecmp(value, dip->options[i].value) == 0) {
+            bits = dip->options[i].bits;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        found = destroyer_parse_raw_dip_value(value, dip->mask, &bits);
+    if (!found) {
+        printf("invalid value '%s' for DIP '%s' (try 'dipswitch list')\n",
+               value, name);
+        return true;
+    }
+
+    s->in1 = (uint8_t)((s->in1 & ~dip->mask) | (bits & dip->mask));
+    const DestroyerDipOption *cur = destroyer_current_dip_option(s, dip);
+    printf("DIP %s = %s\n", dip->name, cur ? cur->value : value);
+    return true;
+}
+
+static bool destroyer_monitor_command(RcaDestroyerState *s, const char *line) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", line);
+
+    char *cmd = strtok(buf, " \t");
+    if (!cmd)
+        return true;
+    if (strcasecmp(cmd, "dipswitch") != 0 && strcasecmp(cmd, "dip") != 0)
+        return false;
+
+    char *name = strtok(NULL, " \t");
+    char *value = strtok(NULL, " \t");
+    char *extra = strtok(NULL, " \t");
+
+    if (!name || strcasecmp(name, "list") == 0) {
+        destroyer_list_dips(s);
+        return true;
+    }
+    if (!value || extra) {
+        printf("usage: dipswitch list | dipswitch <name> <value>\n");
+        return true;
+    }
+    return destroyer_set_dip(s, name, value);
 }
 
 /*
@@ -368,6 +520,10 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
             if (cmd == JEMU_MON_QUIT) quit = true;
             else if (cmd == JEMU_MON_RESET) rca_destroyer_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP) cdp1802_step(&s->cpu);
+            else if (cmd == JEMU_MON_CUSTOM) {
+                if (!destroyer_monitor_command(s, jemu_monitor_command_text(s->monitor)))
+                    jemu_monitor_unknown_command(s->monitor);
+            }
         }
         if (quit) break;
 
