@@ -370,6 +370,9 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         else
             display = rca_display_sdl_create(cfg->display_scale);
         break;
+    case JEMU_DISPLAY_CURSES:
+        display = rca_display_curses_create();
+        break;
     default:
         display = rca_display_none_create();
         break;
@@ -392,8 +395,9 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
     const Uint32 frame_ms = is_pal ? 20u : 16u;
     const int mcycles_per_frame = is_pal ? CDP1869_MCYCLES_PER_FRAME
                                          : CDP1861_MCYCLES_PER_FRAME;
-    jemu_monitor_start(s->monitor);
-    if (rca_vip_has_vp601(cfg))
+    if (cfg->display_type != JEMU_DISPLAY_CURSES)
+        jemu_monitor_start(s->monitor);
+    if (cfg->display_type != JEMU_DISPLAY_CURSES && rca_vip_has_vp601(cfg))
         SDL_StartTextInput();
 
     bool quit = false;
@@ -401,41 +405,45 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         Uint32 t0 = SDL_GetTicks();
 
         /* ── Input ── */
-        SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_QUIT) { quit = true; break; }
-            if (ev.type == SDL_TEXTINPUT && rca_vip_has_vp601(cfg)) {
-                unsigned char ch = (unsigned char)ev.text.text[0];
-                if (ch >= 'a' && ch <= 'z')
-                    ch = (unsigned char)(ch - 32);
-                if (ch >= 0x20 && ch <= 0x7E)
-                    s->ascii_key = ch;
-                continue;
-            }
-            if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
-                quit = true; break;
-            }
-            if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
-                bool down = (ev.type == SDL_KEYDOWN);
-                /* TAB acts as the VIP front-panel INPUT button (EF2). */
-                if (ev.key.keysym.sym == SDLK_TAB)
-                    s->ef2_down = down;
-
-                if (down && rca_vip_has_vp601(cfg)) {
-                    int ascii = rca_vp601_sdl_key_to_ascii(ev.key.keysym.sym, ev.key.keysym.mod);
-                    if (ascii >= 0)
-                        s->ascii_key = ascii;
+        if (cfg->display_type == JEMU_DISPLAY_CURSES) {
+            rca_display_curses_poll_vip(display, s, &quit);
+        } else {
+            SDL_Event ev;
+            while (SDL_PollEvent(&ev)) {
+                if (ev.type == SDL_QUIT) { quit = true; break; }
+                if (ev.type == SDL_TEXTINPUT && rca_vip_has_vp601(cfg)) {
+                    unsigned char ch = (unsigned char)ev.text.text[0];
+                    if (ch >= 'a' && ch <= 'z')
+                        ch = (unsigned char)(ch - 32);
+                    if (ch >= 0x20 && ch <= 0x7E)
+                        s->ascii_key = ch;
+                    continue;
                 }
+                if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
+                    quit = true; break;
+                }
+                if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
+                    bool down = (ev.type == SDL_KEYDOWN);
+                    /* TAB acts as the VIP front-panel INPUT button (EF2). */
+                    if (ev.key.keysym.sym == SDLK_TAB)
+                        s->ef2_down = down;
 
-                if (rca_vip_has_keypad(cfg)) {
-                    int k = rca_vip_keypad_keycode_to_hex(ev.key.keysym.sym);
-                    if (k >= 0) {
-                        if (down) {
-                            s->keys[k] = 1;
-                            s->key_down = k;
-                        } else {
-                            s->keys[k] = 0;
-                            if (s->key_down == k) s->key_down = -1;
+                    if (down && rca_vip_has_vp601(cfg)) {
+                        int ascii = rca_vp601_sdl_key_to_ascii(ev.key.keysym.sym, ev.key.keysym.mod);
+                        if (ascii >= 0)
+                            s->ascii_key = ascii;
+                    }
+
+                    if (rca_vip_has_keypad(cfg)) {
+                        int k = rca_vip_keypad_keycode_to_hex(ev.key.keysym.sym);
+                        if (k >= 0) {
+                            if (down) {
+                                s->keys[k] = 1;
+                                s->key_down = k;
+                            } else {
+                                s->keys[k] = 0;
+                                if (s->key_down == k) s->key_down = -1;
+                            }
                         }
                     }
                 }
@@ -505,8 +513,9 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
            (unsigned long long)s->cpu.cycle_count,
            (unsigned long long)s->cpu.insn_count);
 
-    if (rca_vip_has_vp601(cfg))
+    if (cfg->display_type != JEMU_DISPLAY_CURSES && rca_vip_has_vp601(cfg))
         SDL_StopTextInput();
-    jemu_monitor_stop(s->monitor);
+    if (cfg->display_type != JEMU_DISPLAY_CURSES)
+        jemu_monitor_stop(s->monitor);
     rca_display_destroy(display);
 }

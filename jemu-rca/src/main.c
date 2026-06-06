@@ -35,6 +35,7 @@ static const JemuArgsDef def = {
     .cpus         = cpus,     .n_cpus     = 1,
     .vgas         = vgas,     .n_vgas     = 3,
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
+                  | JEMU_DISP_F(JEMU_DISPLAY_CURSES)
                   | JEMU_DISP_F(JEMU_DISPLAY_NONE),
     .vnc_support  = true,
     .extra_help =
@@ -258,8 +259,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "jemu-rca: generic machine not yet implemented\n");
         return 1;
     }
+    if (cfg.machine == RCA_MACHINE_DESTROYER &&
+        cfg.display_type == JEMU_DISPLAY_CURSES) {
+        fprintf(stderr, "jemu-rca: curses display is not yet supported by destroyer\n");
+        return 1;
+    }
 
-    if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) {
+    if (cfg.display_type == JEMU_DISPLAY_SDL ||
+        cfg.display_type == JEMU_DISPLAY_CURSES ||
+        cfg.display_type == JEMU_DISPLAY_NONE) {
         if (SDL_Init(0) < 0) {
             fprintf(stderr, "jemu-rca: SDL_Init failed: %s\n", SDL_GetError());
             return 1;
@@ -269,7 +277,9 @@ int main(int argc, char *argv[]) {
     if (cfg.machine == RCA_MACHINE_DESTROYER) {
         RcaDestroyerState *s = rca_destroyer_create(&cfg);
         if (!s) {
-            if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+            if (cfg.display_type == JEMU_DISPLAY_SDL ||
+                cfg.display_type == JEMU_DISPLAY_CURSES ||
+                cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
             return 1;
         }
         rca_destroyer_run(s, &cfg);
@@ -277,13 +287,17 @@ int main(int argc, char *argv[]) {
     } else {
         RcaVipState *s = rca_vip_create(&cfg);
         if (!s) {
-            if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+            if (cfg.display_type == JEMU_DISPLAY_SDL ||
+                cfg.display_type == JEMU_DISPLAY_CURSES ||
+                cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
             return 1;
         }
         rca_machine_run(s, &cfg);
         rca_vip_destroy(s);
     }
 
-    if (cfg.display_type == JEMU_DISPLAY_SDL || cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+    if (cfg.display_type == JEMU_DISPLAY_SDL ||
+        cfg.display_type == JEMU_DISPLAY_CURSES ||
+        cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
     return 0;
 }

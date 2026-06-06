@@ -59,6 +59,8 @@ RcaDisplay  *rca_display_sdl_create_indexed(const char *title, int w, int h,
                                             int scale,
                                             const uint32_t *palette,
                                             int n_colors);
+RcaDisplay  *rca_display_curses_create(void);
+void         rca_display_curses_poll_vip(RcaDisplay *d, RcaVipState *s, bool *quit);
 RcaDisplay  *rca_display_none_create(void);
 
 static inline void rca_display_render(RcaDisplay *d, const uint8_t *vram, int w, int h) {

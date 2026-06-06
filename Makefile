@@ -45,7 +45,7 @@ RCA_CFLAGS := $(BASE_CFLAGS) \
 	-Ijemu-rca/src/hardware \
 	-Ijemu-rca/src/devices \
 	$(SDL2_CFLAGS)
-RCA_LDFLAGS := $(SDL2_LIBS) -pthread
+RCA_LDFLAGS := $(SDL2_LIBS) -lncursesw -pthread
 
 RCA_CORE_SRC := \
 	core/src/memory.c \
@@ -59,6 +59,7 @@ RCA_SRC := \
 	jemu-rca/src/vga/cdp1861.c \
 	jemu-rca/src/vga/cdp1869.c \
 	jemu-rca/src/vga/display_sdl.c \
+	jemu-rca/src/vga/display_curses.c \
 	jemu-rca/src/devices/vip_devices.c \
 	jemu-rca/src/devices/pcspk.c \
 	jemu-rca/src/hardware/machine_vip.c \
