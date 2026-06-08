@@ -64,7 +64,8 @@ RCA_SRC := \
 	jemu-rca/src/devices/pcspk.c \
 	jemu-rca/src/devices/tape.c \
 	jemu-rca/src/hardware/machine_vip.c \
-	jemu-rca/src/hardware/machine_destroyer.c
+	jemu-rca/src/hardware/machine_destroyer.c \
+	jemu-rca/src/hardware/machine_studio2.c
 
 RCA_OBJ := $(patsubst %.c, build/rca/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
@@ -122,4 +123,5 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	jemu-rca/src/devices/tape.h \
 	jemu-rca/src/devices/vip_devices.h \
 	jemu-rca/src/hardware/vip.h \
-	jemu-rca/src/hardware/destroyer.h
+	jemu-rca/src/hardware/destroyer.h \
+	jemu-rca/src/hardware/studio2.h

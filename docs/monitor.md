@@ -38,3 +38,11 @@ Sets a machine-specific DIP switch (when supported by the active machine)
 > ``change (device) (file)``
 
 Used for live-swapping images attached to the emulated media drive. Device depends on the machine.
+
+> ``change (device) (ADDR):(file)``
+
+todo
+
+> ``change (device) eject``
+
+Ejects device

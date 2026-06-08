@@ -7,6 +7,7 @@ typedef enum {
     RCA_MACHINE_GENERIC,
     RCA_MACHINE_COSMAC_VIP,
     RCA_MACHINE_DESTROYER,
+    RCA_MACHINE_STUDIO2,
 } RcaMachineType;
 
 typedef enum {
@@ -53,6 +54,8 @@ typedef struct RcaConfig {
     bool            has_start_addr;
     uint16_t        start_addr;
     /* Compact cassette tape */
-    const char     *tape_path;   /* NULL = no tape inserted */
-    uint16_t        tape_addr;   /* load address for raw binary tapes */
+    const char     *tape_path;       /* NULL = no tape inserted */
+    uint16_t        tape_addr;       /* load address for raw binary tapes */
+    /* Cartridge */
+    const char     *cartridge_path;  /* NULL = no cartridge */
 } RcaConfig;
