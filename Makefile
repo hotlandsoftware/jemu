@@ -89,11 +89,11 @@ all: bin/jemu-chip8 bin/jemu-rca
 
 bin/jemu-chip8: $(CHIP8_OBJ)
 	@mkdir -p bin
-	$(CC) -o $@ $^ $(CHIP8_LDFLAGS)
+	$(CC) -o $@ $^ $(CHIP8_LDFLAGS) $(EXTRA_LDFLAGS)
 
 bin/jemu-rca: rca-force $(RCA_OBJ)
 	@mkdir -p bin
-	$(CC) -o $@ $(filter %.o,$^) $(RCA_LDFLAGS)
+	$(CC) -o $@ $(filter %.o,$^) $(RCA_LDFLAGS) $(EXTRA_LDFLAGS)
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)

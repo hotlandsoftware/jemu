@@ -1,28 +1,58 @@
-name: Build
+name: Build & Release
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
 
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y gcc make libsdl2-dev libncursesw5-dev
+          apk add --no-cache \
+            git gcc make musl-dev \
+            sdl2-dev sdl2-static \
+            ncurses-dev ncurses-static \
+            alsa-lib-dev alsa-lib-static \
+            libx11-dev libxext-dev \
+            libxcursor-dev libxi-dev libxrandr-dev \
+            libxss-dev libxxf86vm-dev \
+            libxcb-dev mesa-dev libdrm-dev \
+            eudev-dev
 
-      - name: Build
-        run: make
+      - uses: actions/checkout@v4
 
-      - name: Upload binaries
+      - name: Build static binaries
+        run: |
+          make \
+            SDL2_LIBS="$(pkg-config --static --libs sdl2 2>/dev/null || sdl2-config --static-libs)" \
+            EXTRA_LDFLAGS="-static"
+
+      - name: Package
+        run: tar czf jemu-linux-x86_64.tar.gz -C bin jemu-chip8 jemu-rca
+
+      - name: Upload artifact (PRs)
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: jemu-binaries
-          path: bin/
+          name: jemu-linux-x86_64
+          path: jemu-linux-x86_64.tar.gz
           retention-days: 7
+
+      - name: Release (rolling pre-release)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: jemu
+          prerelease: true
+          body: "This is an unstable build of jemu that is not suitable for production yet."
+          files: jemu-linux-x86_64.tar.gz
