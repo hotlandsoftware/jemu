@@ -17,13 +17,17 @@
 
 static const JemuDevDesc machines[] = {
     {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
-    {"apollo80",   "Apollo 80 (alias for studio2)"},
+    {"apollo80",   "Academy Apollo 80 (alias for studio2)"},
     {"cm1200",     "Conic M-1200 (alias for studio2)"},
     {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
     {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
     {"generic",    "Generic RCA COSMAC (stub/not yet implemented)"},
     {"mpt02",      "Victory MPT-02 (alias for studio2)"},
+    {"mpt02j",     "Hanimex MPT-02 (alias for studio2)"},
+    {"mtc9016",    "Mustang 9016 (alias for studio2)"},
     {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
+    {"sm1200",     "Sheen M1200 (alias for studio2)"},
+    {"visicom",     "Visicom COM-100 (alias for studio2)"},
 };
 static const JemuDevDesc cpus[] = {
     {"cdp1802", "RCA CDP1802 COSMAC"},
@@ -192,7 +196,11 @@ int main(int argc, char *argv[]) {
         else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
         else if (strcmp(args.machine, "mpt02")      == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "mpt02j")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "mtc9016")    == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "sm1200")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "studio2")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
+        else if (strcmp(args.machine, "visicom")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
     }
     if (args.vga) {
         if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;
