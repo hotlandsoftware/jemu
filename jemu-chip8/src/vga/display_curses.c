@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE_EXTENDED 1
+#define _POSIX_C_SOURCE 199309L
 #include "chip8.h"
 #include <ncurses.h>
 #include <locale.h>
