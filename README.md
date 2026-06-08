@@ -13,6 +13,8 @@ JEMU is still in an alpha state. It will likely never be "complete" as there wil
 make
 make GTK=1 # for GTK support
 ```
-
 # Targets
 See MACHINES.md
+
+# Why?
+To put it bluntly, I'm very curious to see how far AI agents have come, and I'm curious to see *how* many different machines we can make AI emulate with little reference. (And also because I wanted something like MAME with the power of QEMU that could run off a VNC server.)

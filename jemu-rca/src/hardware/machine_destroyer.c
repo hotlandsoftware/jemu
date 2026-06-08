@@ -1,4 +1,5 @@
 #include "destroyer.h"
+#include "devices/pcspk.h"
 #include "jemu/memory.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
@@ -131,10 +132,32 @@ static uint8_t destroyer_io_in(uint8_t port, void *ud) {
     return 0xff;
 }
 
+/* CDP1869 dot clock: 5.7143 MHz for Destroyer (PAL) */
+#define DESTROYER_DOT_HZ 5714300u
+
+static void destroyer_update_sound(RcaDestroyerState *s) {
+    if (!s->speaker) return;
+    const Cdp1869 *vis = &s->vis;
+    if (vis->tone_off || vis->tone_amp == 0) {
+        rca_pcspk_set_gate(s->speaker, 0);
+        return;
+    }
+    /* f = (dot_hz / 2) / (512 >> tone_freq_sel) / (tone_div + 1) */
+    unsigned prescaler = 512u >> vis->tone_freq_sel;
+    unsigned freq = (DESTROYER_DOT_HZ / 2u) / prescaler / ((unsigned)vis->tone_div + 1u);
+    if (freq < 20u)    freq = 20u;
+    if (freq > 20000u) freq = 20000u;
+    rca_pcspk_set_freq(s->speaker, freq);
+    rca_pcspk_set_gate(s->speaker, 1);
+}
+
 static void destroyer_io_out(uint8_t port, uint8_t val, void *ud) {
     RcaDestroyerState *s = ud;
-    if (port >= 3 && port <= 7)
+    if (port >= 3 && port <= 7) {
         cdp1869_out(&s->vis, port, s->cpu.memory_addr, val);
+        if (port == 4)
+            destroyer_update_sound(s);
+    }
 }
 
 static void destroyer_q_out(uint8_t q, void *ud) {
@@ -374,6 +397,9 @@ RcaDestroyerState *rca_destroyer_create(const RcaConfig *cfg) {
     destroyer_default_inputs(s);
     destroyer_sync_inputs(s);
 
+    if (cfg->sound_hw != RCA_SOUND_NONE)
+        s->speaker = rca_pcspk_create(440u);
+
     s->monitor = jemu_monitor_create();
     if (cfg->vnc_addr) {
         int w = (cfg->vga == RCA_VGA_CDP1869) ? DESTROYER_ROTATED_W : CDP1861_DISPLAY_W;
@@ -414,6 +440,7 @@ void rca_destroyer_reset(RcaDestroyerState *s, const RcaConfig *cfg) {
 
 void rca_destroyer_destroy(RcaDestroyerState *s) {
     if (!s) return;
+    rca_pcspk_destroy(s->speaker);
     jemu_monitor_destroy(s->monitor);
     jemu_vnc_destroy(s->vnc);
     free(s);

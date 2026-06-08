@@ -87,7 +87,10 @@ static void *monitor_thread(void *arg) {
                    "  stop / halt      halt emulation\n"
                    "  cont / c         resume emulation\n"
                    "  step / s         execute one instruction (use after stop)\n"
-                   "  dipswitch ...    machine-specific DIP switch command, when supported\n");
+                   "  dipswitch ...    machine-specific DIP switch command, when supported\n"
+                   "  change tape FILE         insert or change cassette tape (VIP)\n"
+                   "  change tape ADDR:FILE    insert tape at load address ADDR\n"
+                   "  change tape eject        eject the cassette tape\n");
         } else if (!strcmp(line, "reset") || !strcmp(line, "system_reset")) {
             enqueue(mon, JEMU_MON_RESET);
         } else if (!strcmp(line, "q") || !strcmp(line, "quit")) {

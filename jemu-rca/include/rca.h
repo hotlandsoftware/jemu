@@ -52,4 +52,7 @@ typedef struct RcaConfig {
     const char     *vnc_addr;
     bool            has_start_addr;
     uint16_t        start_addr;
+    /* Compact cassette tape */
+    const char     *tape_path;   /* NULL = no tape inserted */
+    uint16_t        tape_addr;   /* load address for raw binary tapes */
 } RcaConfig;

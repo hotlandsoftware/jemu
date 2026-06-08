@@ -15,6 +15,7 @@
 static const JemuDevDesc machines[] = {
     {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
     {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
+    {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
     {"generic",    "Generic RCA COSMAC (stub, not yet implemented)"},
 };
 static const JemuDevDesc cpus[] = {
@@ -31,7 +32,7 @@ static const JemuDevDesc soundhws[] = {
 };
 static const JemuArgsDef def = {
     .prog         = "jemu-rca",
-    .machines     = machines, .n_machines = 3,
+    .machines     = machines, .n_machines = 4,
     .cpus         = cpus,     .n_cpus     = 1,
     .vgas         = vgas,     .n_vgas     = 3,
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
@@ -46,11 +47,12 @@ static const JemuArgsDef def = {
         "  -start ADDR      Start CDP1802 execution at ADDR\n"
         "  -device NAME     Attach device      (use -device ? to list)\n"
         "  -soundhw NAME    Sound hardware     (use -soundhw ? to list)\n"
-        "\nExamples:\n"
+        "  -tape FILE       Insert a cassette tape (raw binary, loaded at 0x0000)\n"
+        "  -tape ADDR:FILE  Insert a cassette tape at the given load address\n"
+        "\nExample commands:\n"
         "  ./bin/jemu-rca -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
-        "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom\n"
-        "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -vnc localhost:15\n"
+        "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -tape 0x0200:tape/hello.bin\n"
         "  ./bin/jemu-rca -M destroyer -rom roms/destroyer/des\\ a\\ 2.ic4 -rom roms/destroyer/des\\ b\\ 2.ic5 -rom roms/destroyer/des\\ c\\ 2.ic6 -rom roms/destroyer/des\\ d\\ 2.ic7\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
 };
@@ -175,6 +177,7 @@ int main(int argc, char *argv[]) {
     if (args.machine) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
         else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
+        else if (strcmp(args.machine, "altair2")    == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
     }
     if (args.vga) {
@@ -229,6 +232,22 @@ int main(int argc, char *argv[]) {
             if (!parse_soundhw(v, &cfg.sound_hw)) {
                 fprintf(stderr, "jemu-rca: unknown sound hardware '%s' (try -soundhw ?)\n", v);
                 return 1;
+            }
+        } else if (strcmp(rem[i], "-tape") == 0 && i + 1 < nrem) {
+            const char *v = rem[++i];
+            /* Accept either "FILE" or "ADDR:FILE" */
+            const char *colon = strchr(v, ':');
+            if (colon && colon != v) {
+                char addr_buf[32] = {0};
+                size_t alen = (size_t)(colon - v);
+                if (alen < sizeof(addr_buf)) {
+                    memcpy(addr_buf, v, alen);
+                    cfg.tape_addr = (uint16_t)strtoul(addr_buf, NULL, 0);
+                }
+                cfg.tape_path = colon + 1;
+            } else {
+                cfg.tape_path = v;
+                cfg.tape_addr = 0x0000;
             }
         } else {
             fprintf(stderr, "jemu-rca: unknown option '%s' (try -h)\n", rem[i]);

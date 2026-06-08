@@ -153,7 +153,12 @@ void cdp1869_out(Cdp1869 *vis, uint8_t port, uint16_t ma, uint8_t data) {
         update_page_geometry(vis);
         break;
     case 4:
-        break; /* sound registers only for now */
+        /* tone amp[3:0], freq_sel[6:4], tone_off[7], divider[14:8] */
+        vis->tone_amp      = (uint8_t)(ma & 0x0fu);
+        vis->tone_freq_sel = (uint8_t)((ma >> 4) & 0x07u);
+        vis->tone_off      = (ma & 0x80u) != 0;
+        vis->tone_div      = (uint8_t)((ma >> 8) & 0x7fu);
+        break;
     case 5:
         vis->cmem = (ma & 0x0001u) != 0;
         vis->line9 = (ma & 0x0008u) != 0;

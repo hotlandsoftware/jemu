@@ -34,3 +34,7 @@ Lists machine-specific DIP switches (when supported by the active machine)
 > ``dipswitch (name) (value)``
 
 Sets a machine-specific DIP switch (when supported by the active machine)
+
+> ``change (device) (file)``
+
+Used for live-swapping images attached to the emulated media drive. Device depends on the machine.

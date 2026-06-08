@@ -17,6 +17,7 @@ typedef struct RcaDestroyerState {
     uint8_t rotated_bitmap[CDP1869_VISIBLE_W * CDP1869_VISIBLE_H];
     JemuMonitor *monitor;
     JemuVncServer *vnc;
+    RcaPcSpeaker *speaker;
 
     uint8_t in0;
     uint8_t in1;

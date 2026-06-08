@@ -4,6 +4,7 @@
 #include "cdp1869.h"
 #include "rca.h"
 #include "devices/pcspk.h"
+#include "devices/tape.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
 #include <stdlib.h>
@@ -21,6 +22,9 @@ typedef struct RcaVipState {
     JemuMonitor *monitor;
     JemuVncServer *vnc;
     RcaPcSpeaker *speaker;
+
+    /* Compact cassette tape */
+    VipTape  tape;
 
     /* Pixel framebuffer: 1 byte per pixel (0 or 1), 64 wide × 128 tall */
     uint8_t  vram[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];

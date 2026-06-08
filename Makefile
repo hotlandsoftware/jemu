@@ -62,6 +62,7 @@ RCA_SRC := \
 	jemu-rca/src/vga/display_curses.c \
 	jemu-rca/src/devices/vip_devices.c \
 	jemu-rca/src/devices/pcspk.c \
+	jemu-rca/src/devices/tape.c \
 	jemu-rca/src/hardware/machine_vip.c \
 	jemu-rca/src/hardware/machine_destroyer.c
 
@@ -118,6 +119,7 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	jemu-rca/src/vga/cdp1861.h \
 	jemu-rca/src/vga/cdp1869.h \
 	jemu-rca/src/devices/pcspk.h \
+	jemu-rca/src/devices/tape.h \
 	jemu-rca/src/devices/vip_devices.h \
 	jemu-rca/src/hardware/vip.h \
 	jemu-rca/src/hardware/destroyer.h

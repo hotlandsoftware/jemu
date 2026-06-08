@@ -8,5 +8,6 @@
 # jemu-rca
 | Machine | Year | CPU | ROM File | Status | Graphics | Input | Sound | Notes |
 |------------|----------|----------|---------------|--------|---------|---------|---------|---------
-| COSMAC VIP | 1977 | RCA CDP1802 | ``fpb_color.bin``, ``vip.32.rom`` | working   |    🟢     |    🟢    |    🟢     | no tape support | 
-| Cidelsa (Destroyer) | 1980 | RCA CDP1802 | ``des a 2.ic4``, ``des b 2.ic5``, ``des c 2.ic6``, ``des d 2.ic7`` | working | 🟢 | 🟢 | 🔴 | no sound |
+| COSMAC VIP | 1977 | RCA CDP1802 | ``fpb_color.bin``, ``vip.32.rom`` | working   |    🟢     |    🟢    |    🟢     |  | 
+| Cidelsa (Altair II) | 198? | RCA CDP1802 | ``alta2-2716.ic7`` ... ``altf2-2716.ic12`` | working | 🟢 | 🟢 | 🟢 | alias for ``destroyer`` (`-M altair2`) |
+| Cidelsa (Destroyer) | 1980 | RCA CDP1802 | ``des a 2.ic4``, ``des b 2.ic5``, ``des c 2.ic6``, ``des d 2.ic7`` | working | 🟢 | 🟢 | 🟢 | CDP1869 tone generator |

@@ -50,6 +50,12 @@ typedef struct Cdp1869 {
     uint8_t  pcb;
     bool     dirty;
 
+    /* Tone generator (programmed via OUT4 using memory address bus) */
+    uint8_t  tone_amp;       /* 0-15 */
+    uint8_t  tone_freq_sel;  /* 0-7, prescaler = 512 >> tone_freq_sel */
+    bool     tone_off;
+    uint8_t  tone_div;       /* 0-127 */
+
     /* Sync counters (managed by cdp1869_sync) */
     uint16_t lc;   /* current scan line (0..CDP1869_LINES_TOTAL-1) */
     uint8_t  mc;   /* machine-cycle within line (0..CDP1869_MCYCLES_PER_LINE-1) */

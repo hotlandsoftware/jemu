@@ -263,7 +263,11 @@ static void vip_step_instruction(RcaVipState *s) {
     uint64_t start = s->cpu.insn_count;
     for (int i = 0; i < 1024 && s->cpu.insn_count == start; i++) {
         s->cpu.EF[1] = !s->ef2_down;
-        s->cpu.EF[2] = !rca_vip_has_vp601(s->cfg) || s->ascii_key < 0;
+        /* EF3: cassette when tape is playing, VP601 data-ready otherwise */
+        if (s->tape.playing)
+            s->cpu.EF[2] = (bool)vip_tape_ef3(&s->tape, s->cpu.cycle_count);
+        else
+            s->cpu.EF[2] = !rca_vip_has_vp601(s->cfg) || s->ascii_key < 0;
         s->cpu.EF[3] = !vip_ascii_pending(s) &&
                        (!rca_vip_has_keypad(s->cfg) || s->key_down < 0);
         cdp1802_step(&s->cpu);
@@ -309,6 +313,10 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->key_down = -1;
     s->ascii_key = -1;
 
+    vip_tape_init(&s->tape);
+    if (cfg->tape_path)
+        vip_tape_load(&s->tape, cfg->tape_path, cfg->tape_addr, 0);
+
     JemuMemory tmp = {.data = s->mem, .size = VIP_MEM_SIZE};
     for (int i = 0; i < cfg->n_roms; i++) {
         size_t len = 0;
@@ -335,6 +343,14 @@ void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
     s->ascii_key = -1;
     s->ef2_down  = false;
     memset(s->keys, 0, sizeof(s->keys));
+    /* Rewind tape to the beginning on reset */
+    if (s->tape.n_bits > 0) {
+        s->tape.bit_pos     = 0;
+        s->tape.phase       = 0;
+        s->tape.ef3         = 0;
+        s->tape.next_toggle = s->cpu.cycle_count + VIP_TAPE_HP_ZERO;
+        s->tape.playing     = true;
+    }
 
     JemuMemory tmp = {.data = s->mem, .size = VIP_MEM_SIZE};
     for (int i = 0; i < cfg->n_roms; i++)
@@ -346,6 +362,7 @@ void rca_vip_reset(RcaVipState *s, const RcaConfig *cfg) {
 void rca_vip_destroy(RcaVipState *s) {
     if (!s) return;
     if (crash_state == s) crash_state = NULL;
+    vip_tape_destroy(&s->tape);
     rca_pcspk_destroy(s->speaker);
     jemu_monitor_destroy(s->monitor);
     jemu_vnc_destroy(s->vnc);
@@ -473,7 +490,44 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
             if      (cmd == JEMU_MON_QUIT)  quit = true;
             else if (cmd == JEMU_MON_RESET) rca_vip_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP)  vip_step_instruction(s);
-            else if (cmd == JEMU_MON_CUSTOM) jemu_monitor_unknown_command(s->monitor);
+            else if (cmd == JEMU_MON_CUSTOM) {
+                const char *text = jemu_monitor_command_text(s->monitor);
+                /* change tape [ADDR:]FILE  — insert or change tape
+                 * change tape eject        — eject tape              */
+                char buf[256];
+                snprintf(buf, sizeof(buf), "%s", text);
+                char *verb = strtok(buf, " \t");
+                if (verb && strcasecmp(verb, "change") == 0) {
+                    char *what = strtok(NULL, " \t");
+                    if (what && strcasecmp(what, "tape") == 0) {
+                        char *arg = strtok(NULL, " \t");
+                        if (!arg || strcasecmp(arg, "eject") == 0) {
+                            vip_tape_eject(&s->tape);
+                            printf("tape: ejected\n");
+                        } else {
+                            /* Optional ADDR: prefix, same as -rom */
+                            uint16_t addr = 0x0000;
+                            const char *file = arg;
+                            char *colon = strchr(arg, ':');
+                            if (colon && colon != arg) {
+                                char addr_buf[32] = {0};
+                                size_t alen = (size_t)(colon - arg);
+                                if (alen < sizeof(addr_buf)) {
+                                    memcpy(addr_buf, arg, alen);
+                                    addr = (uint16_t)strtoul(addr_buf, NULL, 0);
+                                }
+                                file = colon + 1;
+                            }
+                            vip_tape_load(&s->tape, file, addr,
+                                          s->cpu.cycle_count);
+                        }
+                    } else {
+                        jemu_monitor_unknown_command(s->monitor);
+                    }
+                } else {
+                    jemu_monitor_unknown_command(s->monitor);
+                }
+            }
         }
         if (quit) break;
 
@@ -486,7 +540,11 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         /* ── Execute one frame worth of machine cycles ── */
         for (int i = 0; i < mcycles_per_frame; i++) {
             s->cpu.EF[1] = !s->ef2_down;
-            s->cpu.EF[2] = !rca_vip_has_vp601(cfg) || s->ascii_key < 0;
+            /* EF3: cassette when tape is playing, VP601 data-ready otherwise */
+            if (s->tape.playing)
+                s->cpu.EF[2] = (bool)vip_tape_ef3(&s->tape, s->cpu.cycle_count);
+            else
+                s->cpu.EF[2] = !rca_vip_has_vp601(cfg) || s->ascii_key < 0;
             s->cpu.EF[3] = !vip_ascii_pending(s) &&
                            (!rca_vip_has_keypad(cfg) || s->key_down < 0);
             cdp1802_step(&s->cpu);

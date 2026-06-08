@@ -84,6 +84,14 @@ void rca_pcspk_set_gate(RcaPcSpeaker *spk, uint8_t gate) {
     SDL_UnlockAudioDevice(spk->dev);
 }
 
+void rca_pcspk_set_freq(RcaPcSpeaker *spk, unsigned frequency_hz) {
+    if (!spk || !spk->dev)
+        return;
+    SDL_LockAudioDevice(spk->dev);
+    spk->frequency_hz = frequency_hz ? frequency_hz : 1u;
+    SDL_UnlockAudioDevice(spk->dev);
+}
+
 bool rca_pcspk_is_active(const RcaPcSpeaker *spk) {
     return spk && spk->active;
 }
