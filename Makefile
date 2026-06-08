@@ -14,7 +14,8 @@ CORE_SRC := \
 	core/src/tcg.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
-	core/src/args.c
+	core/src/args.c \
+	core/src/sha256.c
 
 CHIP8_SRC := \
 	jemu-chip8/src/main.c \
@@ -51,7 +52,8 @@ RCA_CORE_SRC := \
 	core/src/memory.c \
 	core/src/args.c \
 	core/src/monitor.c \
-	core/src/vnc.c
+	core/src/vnc.c \
+	core/src/sha256.c
 
 RCA_SRC := \
 	jemu-rca/src/main.c \
@@ -65,7 +67,8 @@ RCA_SRC := \
 	jemu-rca/src/devices/tape.c \
 	jemu-rca/src/hardware/machine_vip.c \
 	jemu-rca/src/hardware/machine_destroyer.c \
-	jemu-rca/src/hardware/machine_studio2.c
+	jemu-rca/src/hardware/machine_studio2.c \
+	jemu-rca/src/hardware/romdb.c
 
 ifdef GTK
 RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
@@ -137,4 +140,6 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	jemu-rca/src/devices/vip_devices.h \
 	jemu-rca/src/hardware/vip.h \
 	jemu-rca/src/hardware/destroyer.h \
-	jemu-rca/src/hardware/studio2.h
+	jemu-rca/src/hardware/studio2.h \
+	jemu-rca/src/hardware/romdb.h \
+	core/include/jemu/sha256.h

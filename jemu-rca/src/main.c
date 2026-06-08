@@ -2,10 +2,12 @@
 #include "hardware/vip.h"
 #include "hardware/destroyer.h"
 #include "hardware/studio2.h"
+#include "hardware/romdb.h"
 #include "devices/vip_devices.h"
 #include "jemu/jemu.h"
 #include "jemu/args.h"
 #include <SDL2/SDL.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,7 +209,20 @@ int main(int argc, char *argv[]) {
     uint32_t positional_addr = 0x0000;
     for (int i = 0; i < nrem; i++) {
         if (strcmp(rem[i], "-rom") == 0 && i + 1 < nrem) {
-            if (!parse_rom_arg(&cfg, rem[++i])) return 1;
+            const char *val = rem[++i];
+            struct stat st;
+            if (stat(val, &st) == 0 && S_ISDIR(st.st_mode)) {
+                const char *alias = args.machine ? args.machine : "studio2";
+                int n = rca_romdb_load_dir(&cfg, val, alias);
+                if (n < 0) return 1;
+                if (n == 0) {
+                    fprintf(stderr, "jemu-rca: no known ROMs found in '%s' for machine '%s'\n",
+                            val, alias);
+                    return 1;
+                }
+            } else {
+                if (!parse_rom_arg(&cfg, val)) return 1;
+            }
         } else if (strcmp(rem[i], "-load-addr") == 0 && i + 1 < nrem) {
             positional_addr = (uint32_t)strtoul(rem[++i], NULL, 0);
         } else if (strcmp(rem[i], "-start") == 0 && i + 1 < nrem) {
@@ -285,14 +300,15 @@ int main(int argc, char *argv[]) {
     cfg.vnc_addr      = args.vnc_addr;
     if (cfg.vnc_addr)
         cfg.sound_hw = RCA_SOUND_NONE;
-    if (cfg.n_roms == 0) {
-        fprintf(stderr, "jemu-rca: no ROM specified — use positional arg or -rom ADDR:FILE\n");
-        return 1;
-    }
-
     /* VNC with no explicit -display → headless, matching jemu-chip8. */
     if (cfg.vnc_addr && !args.display_explicit)
         cfg.display_type = JEMU_DISPLAY_NONE;
+
+    if (cfg.n_roms == 0 && cfg.machine != RCA_MACHINE_GENERIC) {
+        const char *alias = args.machine ? args.machine : "studio2";
+        rca_romdb_print_needed(alias);
+        return 1;
+    }
 
     if (cfg.machine == RCA_MACHINE_GENERIC) {
         fprintf(stderr, "jemu-rca: generic machine not yet implemented\n");
