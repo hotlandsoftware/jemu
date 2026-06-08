@@ -14,17 +14,18 @@
 /* ── Device registry ─────────────────────────────────────────────────────── */
 
 static const JemuDevDesc machines[] = {
+    {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
+    {"apollo80",   "Apollo 80 (alias for studio2)"},
     {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
     {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
-    {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
-    {"studio2",    "RCA Studio II home console (CDP1802 + CDP1861 Pixie, cartridge-based)"},
-    {"generic",    "Generic RCA COSMAC (stub, not yet implemented)"},
+    {"generic",    "Generic RCA COSMAC (stub/not yet implemented)"},
+    {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
 };
 static const JemuDevDesc cpus[] = {
-    {"cdp1802", "RCA CDP1802 COSMAC (1.76 MHz, 8-bit accumulator, 16 × 16-bit scratchpad)"},
+    {"cdp1802", "RCA CDP1802 COSMAC"},
 };
 static const JemuDevDesc vgas[] = {
-    {"cdp1861", "RCA CDP1861 Pixie (64×128 px, NTSC 60 Hz, DMA-driven)"},
+    {"cdp1861", "RCA CDP1861 Pixie (64x128 px, NTSC 60 Hz, DMA-driven)"},
     {"cdp1869", "RCA CDP1869/1870 VIS tile display"},
     {"none",    "No video output"},
 };
@@ -34,9 +35,9 @@ static const JemuDevDesc soundhws[] = {
 };
 static const JemuArgsDef def = {
     .prog         = "jemu-rca",
-    .machines     = machines, .n_machines = 5,
-    .cpus         = cpus,     .n_cpus     = 1,
-    .vgas         = vgas,     .n_vgas     = 3,
+    .machines     = machines, .n_machines = (int)(sizeof machines / sizeof *machines),
+    .cpus         = cpus,     .n_cpus     = (int)(sizeof cpus     / sizeof *cpus),
+    .vgas         = vgas,     .n_vgas     = (int)(sizeof vgas     / sizeof *vgas),
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
                   | JEMU_DISP_F(JEMU_DISPLAY_CURSES)
                   | JEMU_DISP_F(JEMU_DISPLAY_NONE)
@@ -184,10 +185,11 @@ int main(int argc, char *argv[]) {
 
     if (args.machine) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
-        else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "altair2")    == 0) cfg.machine = RCA_MACHINE_DESTROYER;
-        else if (strcmp(args.machine, "studio2")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
+        else if (strcmp(args.machine, "apollo80")   == 0) cfg.machine = RCA_MACHINE_STUDIO2;
+        else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
+        else if (strcmp(args.machine, "studio2")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
     }
     if (args.vga) {
         if      (strcmp(args.vga, "cdp1861") == 0) cfg.vga = RCA_VGA_CDP1861;

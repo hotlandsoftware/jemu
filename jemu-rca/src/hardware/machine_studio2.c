@@ -225,16 +225,28 @@ RcaStudio2State *rca_studio2_create(const RcaConfig *cfg) {
     memset(s->rom,  0xFF, sizeof(s->rom));
     memset(s->cart, 0xFF, sizeof(s->cart));
 
-    /* Load built-in ROM(s) */
-    JemuMemory tmp_rom = {.data = s->rom, .size = STUDIO2_ROM_SIZE};
+    /* Load built-in ROM(s).
+     * 0x0000–0x07FF → s->rom
+     * 0x0C00–0x0FFF → s->cart[0x0800+] (clone machines with ROM in cart bank) */
     for (int i = 0; i < cfg->n_roms; i++) {
+        uint16_t addr = cfg->roms[i].addr;
         size_t len = 0;
-        if (!jemu_mem_load_file(&tmp_rom, cfg->roms[i].addr, cfg->roms[i].path, &len)) {
+        bool ok;
+        if (addr >= 0x0C00 && addr < 0x1000) {
+            uint16_t offset = (uint16_t)(0x0800u + (addr - 0x0C00u));
+            JemuMemory tmp = {.data = s->cart, .size = STUDIO2_CART_SIZE};
+            ok = jemu_mem_load_file(&tmp, offset, cfg->roms[i].path, &len);
+            if (ok) s->cart_c00 = true;
+        } else {
+            JemuMemory tmp = {.data = s->rom, .size = STUDIO2_ROM_SIZE};
+            ok = jemu_mem_load_file(&tmp, addr, cfg->roms[i].path, &len);
+        }
+        if (!ok) {
             fprintf(stderr, "studio2: failed to load '%s'\n", cfg->roms[i].path);
             rca_studio2_destroy(s);
             return NULL;
         }
-        printf("jemu-rca: %zu bytes @ 0x%04X  <- %s\n", len, cfg->roms[i].addr, cfg->roms[i].path);
+        printf("jemu-rca: %zu bytes @ 0x%04X  <- %s\n", len, addr, cfg->roms[i].path);
     }
 
     /* Insert cartridge if provided */
