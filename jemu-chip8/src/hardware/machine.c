@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 199309L
 #include "chip8.h"
 #include "jemu/memory.h"
 #include <SDL2/SDL.h>
