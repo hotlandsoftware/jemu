@@ -4,8 +4,9 @@
 void cdp1861_init(Cdp1861 *vdc,
                   void (*dma_out_cb)(uint8_t *, void *), void *dma_ud) {
     memset(vdc, 0, sizeof(*vdc));
-    vdc->dma_out_cb = dma_out_cb;
-    vdc->dma_out_ud = dma_ud;
+    vdc->lines_total = CDP1861_LINES_TOTAL; /* default: NTSC */
+    vdc->dma_out_cb  = dma_out_cb;
+    vdc->dma_out_ud  = dma_ud;
 }
 
 void cdp1861_reset(Cdp1861 *vdc) {
@@ -53,7 +54,7 @@ void cdp1861_sync(Cdp1861 *vdc, Cdp1802 *cpu) {
 
     if (++vdc->mcycle == CDP1861_MCYCLES_PER_LINE) {
         vdc->mcycle = 0;
-        if (++vdc->line_counter == CDP1861_LINES_TOTAL)
+        if (++vdc->line_counter == vdc->lines_total)
             vdc->line_counter = 0;
     }
 }

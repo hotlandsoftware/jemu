@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
     if (args.machine) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
         else if (strcmp(args.machine, "altair2")    == 0) cfg.machine = RCA_MACHINE_DESTROYER;
-        else if (strcmp(args.machine, "apollo80")   == 0) cfg.machine = RCA_MACHINE_STUDIO2;
+        else if (strcmp(args.machine, "apollo80")   == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
         else if (strcmp(args.machine, "studio2")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
@@ -213,6 +213,11 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(rem[i], "-start") == 0 && i + 1 < nrem) {
             cfg.start_addr = (uint16_t)strtoul(rem[++i], NULL, 0);
             cfg.has_start_addr = true;
+        } else if (strcmp(rem[i], "-mode") == 0 && i + 1 < nrem) {
+            const char *v = rem[++i];
+            if      (strcmp(v, "pal")  == 0) cfg.tv_mode = RCA_TV_PAL;
+            else if (strcmp(v, "ntsc") == 0) cfg.tv_mode = RCA_TV_NTSC;
+            else { fprintf(stderr, "jemu-rca: unknown mode '%s' (pal|ntsc)\n", v); return 1; }
         } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
             const char *v = rem[++i];
             if (strcmp(v, "?") == 0 || strcmp(v, "help") == 0) {

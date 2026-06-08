@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 typedef struct Cdp1861 {
+    uint16_t lines_total;    /* 262 = NTSC, 312 = PAL; set before first sync */
     uint16_t line_counter;
     uint8_t  mcycle;         /* machine-cycle counter within scan line (0-13) */
     bool     display_on;     /* set via IN 1 (enable) / OUT 1 (disable) */

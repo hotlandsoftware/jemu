@@ -221,6 +221,9 @@ RcaStudio2State *rca_studio2_create(const RcaConfig *cfg) {
     s->cpu.io_ud      = s;
 
     cdp1861_init(&s->vdc, studio2_dma_out, s);
+    s->vdc.lines_total = (cfg->tv_mode == RCA_TV_PAL)
+                         ? CDP1861_PAL_LINES_TOTAL
+                         : CDP1861_LINES_TOTAL;
 
     memset(s->rom,  0xFF, sizeof(s->rom));
     memset(s->cart, 0xFF, sizeof(s->cart));
@@ -365,7 +368,8 @@ void rca_studio2_run(RcaStudio2State *s, const RcaConfig *cfg) {
     if (!is_curses)
         jemu_monitor_start(s->monitor);
 
-    const Uint32 frame_ms = 1000 / STUDIO2_FRAME_HZ;
+    const unsigned mcycles_per_frame = s->vdc.lines_total * CDP1861_MCYCLES_PER_LINE;
+    const Uint32   frame_ms = (s->vdc.lines_total == CDP1861_PAL_LINES_TOTAL) ? 20u : 16u;
     bool quit = false;
 
     while (!quit) {
@@ -391,7 +395,7 @@ void rca_studio2_run(RcaStudio2State *s, const RcaConfig *cfg) {
         }
 
         if (!jemu_monitor_is_paused(s->monitor)) {
-            for (unsigned i = 0; i < CDP1861_MCYCLES_PER_FRAME; i++) {
+            for (unsigned i = 0; i < mcycles_per_frame; i++) {
                 studio2_update_ef(s);
                 cdp1802_step(&s->cpu);
             }

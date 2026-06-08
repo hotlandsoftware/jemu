@@ -33,6 +33,11 @@ typedef enum {
     RCA_SOUND_PCSPK,
 } RcaSoundHwType;
 
+typedef enum {
+    RCA_TV_NTSC = 0,
+    RCA_TV_PAL,
+} RcaTvMode;
+
 #define RCA_MAX_ROM_LOADS 8
 
 typedef struct {
@@ -58,4 +63,6 @@ typedef struct RcaConfig {
     uint16_t        tape_addr;       /* load address for raw binary tapes */
     /* Cartridge */
     const char     *cartridge_path;  /* NULL = no cartridge */
+    /* TV system */
+    RcaTvMode       tv_mode;         /* RCA_TV_NTSC (default) or RCA_TV_PAL */
 } RcaConfig;
