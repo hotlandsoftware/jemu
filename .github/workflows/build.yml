@@ -19,12 +19,12 @@ jobs:
         run: |
           apk add --no-cache \
             git gcc make musl-dev \
-            sdl2-dev sdl2-static \
+            sdl2-dev \
             ncurses-dev ncurses-static \
-            alsa-lib-dev alsa-lib-static \
+            alsa-lib-dev \
             libx11-dev libxext-dev \
             libxcursor-dev libxi-dev libxrandr-dev \
-            libxss-dev libxxf86vm-dev \
+            libxxf86vm-dev \
             libxcb-dev mesa-dev libdrm-dev \
             eudev-dev
 
