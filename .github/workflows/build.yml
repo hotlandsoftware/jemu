@@ -1,0 +1,28 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc make libsdl2-dev libncursesw5-dev
+
+      - name: Build
+        run: make
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: jemu-binaries
+          path: bin/
+          retention-days: 7
