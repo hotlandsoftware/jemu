@@ -18,9 +18,11 @@
 static const JemuDevDesc machines[] = {
     {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
     {"apollo80",   "Apollo 80 (alias for studio2)"},
+    {"cm1200",     "Conic M-1200 (alias for studio2)"},
     {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
     {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
     {"generic",    "Generic RCA COSMAC (stub/not yet implemented)"},
+    {"mpt02",      "Victory MPT-02 (alias for studio2)"},
     {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
 };
 static const JemuDevDesc cpus[] = {
@@ -60,11 +62,8 @@ static const JemuArgsDef def = {
         "  -tape ADDR:FILE  Insert a cassette tape at the given load address\n"
         "  -cartridge FILE  Insert a cartridge (Studio II; raw binary or ST2 format)\n"
         "\nExample commands:\n"
-        "  ./bin/jemu-rca -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -device vip-keypad -rom roms/fpb_color.bin -rom roms/vip.32.rom\n"
         "  ./bin/jemu-rca -rom 0x0000:roms/fpb_color.bin -rom 0x8000:roms/vip.32.rom -tape 0x0200:tape/hello.bin\n"
-        "  ./bin/jemu-rca -M destroyer -rom roms/destroyer/des\\ a\\ 2.ic4 -rom roms/destroyer/des\\ b\\ 2.ic5 -rom roms/destroyer/des\\ c\\ 2.ic6 -rom roms/destroyer/des\\ d\\ 2.ic7\n"
-        "  ./bin/jemu-rca -M studio2 -rom roms/studio2/studio2.rom -cartridge roms/studio2/blackjack.st2\n"
         "  ./bin/jemu-rca -start 0x1000 -rom 0x0000:roms/fpb_color.bin\n",
 };
 
@@ -189,8 +188,10 @@ int main(int argc, char *argv[]) {
         if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
         else if (strcmp(args.machine, "altair2")    == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "apollo80")   == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "cm1200")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
+        else if (strcmp(args.machine, "mpt02")      == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "studio2")    == 0) cfg.machine = RCA_MACHINE_STUDIO2;
     }
     if (args.vga) {
