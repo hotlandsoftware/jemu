@@ -67,11 +67,23 @@ RCA_SRC := \
 	jemu-rca/src/hardware/machine_destroyer.c \
 	jemu-rca/src/hardware/machine_studio2.c
 
-RCA_OBJ := $(patsubst %.c, build/rca/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
+ifdef GTK
+RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
+RCA_LDFLAGS += $(shell pkg-config --libs gtk+-3.0)
+RCA_SRC += jemu-rca/src/vga/display_gtk.c
+endif
+
+ifdef GTK
+RCA_BUILDDIR := build/rca-gtk
+else
+RCA_BUILDDIR := build/rca
+endif
+
+RCA_OBJ := $(patsubst %.c, $(RCA_BUILDDIR)/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
 # ── Rules ─────────────────────────────────────────────────────────────────────
 
-.PHONY: all clean
+.PHONY: all clean rca-force
 
 all: bin/jemu-chip8 bin/jemu-rca
 
@@ -79,15 +91,15 @@ bin/jemu-chip8: $(CHIP8_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(CHIP8_LDFLAGS)
 
-bin/jemu-rca: $(RCA_OBJ)
+bin/jemu-rca: rca-force $(RCA_OBJ)
 	@mkdir -p bin
-	$(CC) -o $@ $^ $(RCA_LDFLAGS)
+	$(CC) -o $@ $(filter %.o,$^) $(RCA_LDFLAGS)
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CHIP8_CFLAGS) -c -o $@ $<
 
-build/rca/%.o: %.c
+$(RCA_BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(RCA_CFLAGS) -c -o $@ $<
 
@@ -117,6 +129,7 @@ $(RCA_OBJ): $(CORE_HDRS) \
 	core/include/jemu/vnc.h \
 	jemu-rca/include/rca.h \
 	jemu-rca/src/cpu/cdp1802.h \
+	jemu-rca/src/vga/rca_display.h \
 	jemu-rca/src/vga/cdp1861.h \
 	jemu-rca/src/vga/cdp1869.h \
 	jemu-rca/src/devices/pcspk.h \

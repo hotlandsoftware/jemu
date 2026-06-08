@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE_EXTENDED 1
 #include "vip.h"
+#include "studio2.h"
 #include "devices/vip_devices.h"
 #include <ncurses.h>
 #include <locale.h>
@@ -137,6 +138,37 @@ void rca_display_curses_poll_vip(RcaDisplay *d, RcaVipState *s, bool *quit) {
                     break;
                 }
             }
+        }
+    }
+}
+
+/* Player A: space=0, q=1, w=2, e=3, a=4, s=5, d=6, z=7, x=8, c=9 */
+static const int studio2_keys_a[10] = {
+    ' ', 'q', 'w', 'e', 'a', 's', 'd', 'z', 'x', 'c',
+};
+/* Player B: number row mapped to Studio II numpad layout (0,7,8,9,4,5,6,1,2,3) */
+static const int studio2_keys_b[10] = {
+    '0', '7', '8', '9', '4', '5', '6', '1', '2', '3',
+};
+
+void rca_display_curses_poll_studio2(RcaDisplay *d, RcaStudio2State *s,
+                                     bool *quit, bool *reset) {
+    if (!d) return;
+    RcaCursesCtx *c = d->ctx;
+    curses_init_once(c);
+
+    if (curses_interrupted) { *quit = true; return; }
+
+    memset(s->keys_a, 0, sizeof(s->keys_a));
+    memset(s->keys_b, 0, sizeof(s->keys_b));
+
+    int ch;
+    while ((ch = getch()) != ERR) {
+        if (ch == 3 || ch == 27) { *quit = true; continue; }
+        if (ch == KEY_F(3) || ch == 'r') { *reset = true; continue; }
+        for (int i = 0; i < 10; i++) {
+            if (ch == studio2_keys_a[i]) { s->keys_a[i] = true; break; }
+            if (ch == studio2_keys_b[i]) { s->keys_b[i] = true; break; }
         }
     }
 }

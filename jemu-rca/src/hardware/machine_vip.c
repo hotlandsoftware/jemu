@@ -274,6 +274,87 @@ static void vip_step_instruction(RcaVipState *s) {
     }
 }
 
+static JemuMediaResult vip_media_change_tape(void *ud, const char *arg,
+                                             char *err, size_t err_len) {
+    RcaVipState *s = ud;
+    if (!arg || !arg[0]) {
+        snprintf(err, err_len, "missing tape path");
+        return JEMU_MEDIA_ERR;
+    }
+
+    uint16_t addr = 0x0000;
+    const char *file = arg;
+    const char *colon = strchr(arg, ':');
+    if (colon && colon != arg) {
+        char addr_buf[32] = {0};
+        size_t alen = (size_t)(colon - arg);
+        if (alen < sizeof(addr_buf)) {
+            memcpy(addr_buf, arg, alen);
+            addr = (uint16_t)strtoul(addr_buf, NULL, 0);
+            file = colon + 1;
+        }
+    }
+
+    if (!vip_tape_load(&s->tape, file, addr, s->cpu.cycle_count)) {
+        snprintf(err, err_len, "failed to load tape '%s'", file);
+        return JEMU_MEDIA_ERR;
+    }
+    return JEMU_MEDIA_OK;
+}
+
+static JemuMediaResult vip_media_eject_tape(void *ud,
+                                            char *err, size_t err_len) {
+    (void)err;
+    (void)err_len;
+    RcaVipState *s = ud;
+    vip_tape_eject(&s->tape);
+    printf("tape: ejected\n");
+    return JEMU_MEDIA_OK;
+}
+
+static void vip_media_status_tape(void *ud, char *buf, size_t buf_len) {
+    const RcaVipState *s = ud;
+    if (s->tape.path[0])
+        snprintf(buf, buf_len, "%s%s", s->tape.path,
+                 s->tape.playing ? " (playing)" : "");
+    else
+        snprintf(buf, buf_len, "empty");
+}
+
+static void vip_poll_display(RcaVipState *s, const RcaConfig *cfg,
+                             RcaDisplay *display, bool *quit) {
+    rca_display_poll(display);
+    if (rca_display_should_quit(display)) {
+        *quit = true;
+        return;
+    }
+
+    s->ef2_down = rca_display_key_down(display, RCA_KEY_TAB);
+
+    uint32_t keysym = rca_display_pop_keysym(display);
+    if (keysym && rca_vip_has_vp601(cfg)) {
+        int ascii = (int)keysym;
+        if (ascii >= 'a' && ascii <= 'z')
+            ascii -= 32;
+        if ((ascii >= 0x20 && ascii <= 0x7e) ||
+            ascii == '\r' || ascii == '\n' ||
+            ascii == '\b' || ascii == 0x7f) {
+            if (ascii == '\n') ascii = '\r';
+            if (ascii == 0x7f) ascii = '\b';
+            s->ascii_key = ascii;
+        }
+    }
+
+    if (rca_vip_has_keypad(cfg)) {
+        static const uint32_t key_map[16] = {
+            'x', '1', '2', '3', 'q', 'w', 'e', 'a',
+            's', 'd', 'z', 'c', '4', 'r', 'f', 'v',
+        };
+        for (int k = 0; k < 16; k++)
+            s->keys[k] = rca_display_key_down(display, key_map[k]);
+    }
+}
+
 RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     RcaVipState *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -291,6 +372,14 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->cpu.panic_ud = s;
 
     s->monitor = jemu_monitor_create();
+    jemu_monitor_register_media(s->monitor, &(JemuMediaDevice){
+        .name   = "tape",
+        .kind   = "tape",
+        .ud     = s,
+        .change = vip_media_change_tape,
+        .eject  = vip_media_eject_tape,
+        .status = vip_media_status_tape,
+    });
     if (cfg->sound_hw == RCA_SOUND_PCSPK && !cfg->vnc_addr) {
         s->speaker = rca_pcspk_create(250u);
         if (!s->speaker)
@@ -375,25 +464,20 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
     vip_install_crash_handlers(s);
 
     RcaDisplay *display;
-    switch (cfg->display_type) {
-    case JEMU_DISPLAY_SDL:
-        if (cfg->vga == RCA_VGA_CDP1869)
-            display = rca_display_sdl_create_indexed("JEMU", CDP1869_VISIBLE_W,
-                                                     CDP1869_VISIBLE_H,
-                                                     cfg->display_scale,
-                                                     vip_vis_palette, 8);
-        else if (cfg->vga == RCA_VGA_NONE)
-            display = rca_display_none_create();
-        else
-            display = rca_display_sdl_create(cfg->display_scale);
-        break;
-    case JEMU_DISPLAY_CURSES:
-        display = rca_display_curses_create();
-        break;
-    default:
+    if (cfg->vga == RCA_VGA_CDP1869)
+        display = rca_display_create_indexed(cfg->display_type, "JEMU",
+                                             CDP1869_VISIBLE_W,
+                                             CDP1869_VISIBLE_H,
+                                             cfg->display_scale,
+                                             vip_vis_palette, 8);
+    else if (cfg->vga == RCA_VGA_NONE)
         display = rca_display_none_create();
-        break;
-    }
+    else
+        display = rca_display_create_mono(cfg->display_type, "JEMU",
+                                          CDP1861_DISPLAY_W,
+                                          CDP1861_DISPLAY_H,
+                                          cfg->display_scale,
+                                          0xFFFFFFFFu, 0xFF100080u);
 
     if (!display) {
         fprintf(stderr, "jemu-rca: failed to create display\n");
@@ -414,7 +498,7 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
                                          : CDP1861_MCYCLES_PER_FRAME;
     if (cfg->display_type != JEMU_DISPLAY_CURSES)
         jemu_monitor_start(s->monitor);
-    if (cfg->display_type != JEMU_DISPLAY_CURSES && rca_vip_has_vp601(cfg))
+    if (cfg->display_type == JEMU_DISPLAY_SDL && rca_vip_has_vp601(cfg))
         SDL_StartTextInput();
 
     bool quit = false;
@@ -422,50 +506,10 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         Uint32 t0 = SDL_GetTicks();
 
         /* ── Input ── */
-        if (cfg->display_type == JEMU_DISPLAY_CURSES) {
+        if (cfg->display_type == JEMU_DISPLAY_CURSES)
             rca_display_curses_poll_vip(display, s, &quit);
-        } else {
-            SDL_Event ev;
-            while (SDL_PollEvent(&ev)) {
-                if (ev.type == SDL_QUIT) { quit = true; break; }
-                if (ev.type == SDL_TEXTINPUT && rca_vip_has_vp601(cfg)) {
-                    unsigned char ch = (unsigned char)ev.text.text[0];
-                    if (ch >= 'a' && ch <= 'z')
-                        ch = (unsigned char)(ch - 32);
-                    if (ch >= 0x20 && ch <= 0x7E)
-                        s->ascii_key = ch;
-                    continue;
-                }
-                if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
-                    quit = true; break;
-                }
-                if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) {
-                    bool down = (ev.type == SDL_KEYDOWN);
-                    /* TAB acts as the VIP front-panel INPUT button (EF2). */
-                    if (ev.key.keysym.sym == SDLK_TAB)
-                        s->ef2_down = down;
-
-                    if (down && rca_vip_has_vp601(cfg)) {
-                        int ascii = rca_vp601_sdl_key_to_ascii(ev.key.keysym.sym, ev.key.keysym.mod);
-                        if (ascii >= 0)
-                            s->ascii_key = ascii;
-                    }
-
-                    if (rca_vip_has_keypad(cfg)) {
-                        int k = rca_vip_keypad_keycode_to_hex(ev.key.keysym.sym);
-                        if (k >= 0) {
-                            if (down) {
-                                s->keys[k] = 1;
-                                s->key_down = k;
-                            } else {
-                                s->keys[k] = 0;
-                                if (s->key_down == k) s->key_down = -1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        else
+            vip_poll_display(s, cfg, display, &quit);
         if (quit) break;
 
         /* Sync any held key to key_down */
@@ -490,44 +534,8 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
             if      (cmd == JEMU_MON_QUIT)  quit = true;
             else if (cmd == JEMU_MON_RESET) rca_vip_reset(s, cfg);
             else if (cmd == JEMU_MON_STEP)  vip_step_instruction(s);
-            else if (cmd == JEMU_MON_CUSTOM) {
-                const char *text = jemu_monitor_command_text(s->monitor);
-                /* change tape [ADDR:]FILE  — insert or change tape
-                 * change tape eject        — eject tape              */
-                char buf[256];
-                snprintf(buf, sizeof(buf), "%s", text);
-                char *verb = strtok(buf, " \t");
-                if (verb && strcasecmp(verb, "change") == 0) {
-                    char *what = strtok(NULL, " \t");
-                    if (what && strcasecmp(what, "tape") == 0) {
-                        char *arg = strtok(NULL, " \t");
-                        if (!arg || strcasecmp(arg, "eject") == 0) {
-                            vip_tape_eject(&s->tape);
-                            printf("tape: ejected\n");
-                        } else {
-                            /* Optional ADDR: prefix, same as -rom */
-                            uint16_t addr = 0x0000;
-                            const char *file = arg;
-                            char *colon = strchr(arg, ':');
-                            if (colon && colon != arg) {
-                                char addr_buf[32] = {0};
-                                size_t alen = (size_t)(colon - arg);
-                                if (alen < sizeof(addr_buf)) {
-                                    memcpy(addr_buf, arg, alen);
-                                    addr = (uint16_t)strtoul(addr_buf, NULL, 0);
-                                }
-                                file = colon + 1;
-                            }
-                            vip_tape_load(&s->tape, file, addr,
-                                          s->cpu.cycle_count);
-                        }
-                    } else {
-                        jemu_monitor_unknown_command(s->monitor);
-                    }
-                } else {
-                    jemu_monitor_unknown_command(s->monitor);
-                }
-            }
+            else if (cmd == JEMU_MON_CUSTOM)
+                jemu_monitor_unknown_command(s->monitor);
         }
         if (quit) break;
 
@@ -571,7 +579,7 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
            (unsigned long long)s->cpu.cycle_count,
            (unsigned long long)s->cpu.insn_count);
 
-    if (cfg->display_type != JEMU_DISPLAY_CURSES && rca_vip_has_vp601(cfg))
+    if (cfg->display_type == JEMU_DISPLAY_SDL && rca_vip_has_vp601(cfg))
         SDL_StopTextInput();
     if (cfg->display_type != JEMU_DISPLAY_CURSES)
         jemu_monitor_stop(s->monitor);

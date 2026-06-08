@@ -2,6 +2,7 @@
 #include "cdp1802.h"
 #include "cdp1861.h"
 #include "rca.h"
+#include "vga/rca_display.h"
 #include "devices/pcspk.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
@@ -10,8 +11,11 @@
 
 #define STUDIO2_ROM_SIZE    0x0800u   /* 2 KB built-in ROM (0x0000-0x07FF) */
 #define STUDIO2_CART_SIZE   0x0C00u   /* up to 3 KB: 0x0400-0x07FF + 0x0C00-0x0FFF */
-#define STUDIO2_RAM_SIZE    0x0100u   /* 256 bytes, mirrored at 0x0800-0x0BFF */
-#define STUDIO2_RAM_MASK    0x00FFu
+#define STUDIO2_RAM_SIZE    0x0200u   /* 512 bytes, mirrored at 0x0800-0x09FF */
+#define STUDIO2_RAM_MASK    0x01FFu
+#define STUDIO2_DISPLAY_W   64
+#define STUDIO2_DISPLAY_H   32
+#define STUDIO2_BYTES_PER_LINE (STUDIO2_DISPLAY_W / 8)
 #define STUDIO2_CART_PATH_MAX 512
 
 typedef struct RcaStudio2State {
@@ -27,7 +31,7 @@ typedef struct RcaStudio2State {
 
     uint8_t  ram[STUDIO2_RAM_SIZE];    /* 512 bytes, mirrored */
 
-    uint8_t  vram[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];
+    uint8_t  vram[STUDIO2_DISPLAY_W * STUDIO2_DISPLAY_H];
     bool     draw_flag;
 
     uint8_t  keylatch;     /* written by OUT 2 (key index 0-9) */
@@ -43,3 +47,6 @@ RcaStudio2State *rca_studio2_create(const RcaConfig *cfg);
 void             rca_studio2_reset(RcaStudio2State *s, const RcaConfig *cfg);
 void             rca_studio2_destroy(RcaStudio2State *s);
 void             rca_studio2_run(RcaStudio2State *s, const RcaConfig *cfg);
+
+void rca_display_curses_poll_studio2(RcaDisplay *d, RcaStudio2State *s,
+                                     bool *quit, bool *reset);

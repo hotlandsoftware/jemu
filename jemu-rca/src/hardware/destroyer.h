@@ -5,7 +5,8 @@
 #include "rca.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
-#include "hardware/vip.h"
+#include "devices/pcspk.h"
+#include "vga/rca_display.h"
 
 #define DESTRYER_MEM_SIZE 65536u
 

@@ -39,7 +39,11 @@ static const JemuArgsDef def = {
     .vgas         = vgas,     .n_vgas     = 3,
     .display_mask = JEMU_DISP_F(JEMU_DISPLAY_SDL)
                   | JEMU_DISP_F(JEMU_DISPLAY_CURSES)
-                  | JEMU_DISP_F(JEMU_DISPLAY_NONE),
+                  | JEMU_DISP_F(JEMU_DISPLAY_NONE)
+#ifdef JEMU_GTK
+                  | JEMU_DISP_F(JEMU_DISPLAY_GTK)
+#endif
+    ,
     .vnc_support  = true,
     .extra_help =
         "\nRCA options:\n"

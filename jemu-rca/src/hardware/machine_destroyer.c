@@ -446,44 +446,42 @@ void rca_destroyer_destroy(RcaDestroyerState *s) {
     free(s);
 }
 
-static void destroyer_poll_sdl(RcaDestroyerState *s, bool *quit) {
+static void destroyer_poll_display(RcaDestroyerState *s, RcaDisplay *display,
+                                   bool *quit) {
     static int debug = -1;
     if (debug < 0)
         debug = getenv("JEMU_INPUT_DEBUG") != NULL;
 
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_QUIT) { *quit = true; return; }
-        if (ev.type != SDL_KEYDOWN && ev.type != SDL_KEYUP)
-            continue;
-        bool down = ev.type == SDL_KEYDOWN;
-        if (down && ev.key.repeat)
-            continue;
+    rca_display_poll(display);
+    if (rca_display_should_quit(display)) {
+        *quit = true;
+        return;
+    }
 
-        SDL_Keycode sym = ev.key.keysym.sym;
-        SDL_Scancode sc = ev.key.keysym.scancode;
-        const char *name = NULL;
-        if (down && sym == SDLK_ESCAPE)
-            *quit = true;
-        else if (sym == SDLK_1 || sc == SDL_SCANCODE_1) { s->start1 = down; name = "start1"; }
-        else if (sym == SDLK_2 || sc == SDL_SCANCODE_2) { s->start2 = down; name = "start2"; }
-        else if (sym == SDLK_RIGHT || sc == SDL_SCANCODE_RIGHT) { s->right = down; name = "right"; }
-        else if (sym == SDLK_LEFT || sc == SDL_SCANCODE_LEFT) { s->left = down; name = "left"; }
-        else if (sym == SDLK_SPACE || sc == SDL_SCANCODE_SPACE) { s->fire = down; name = "fire"; }
-        else if (sym == SDLK_F2 || sc == SDL_SCANCODE_F2) { s->service = down; name = "service"; }
-        else if (sym == SDLK_5 || sc == SDL_SCANCODE_5 ||
-                 sym == SDLK_a || sc == SDL_SCANCODE_A) {
-            s->coin1 = down;
-            if (down) s->coin1_latch = 15;
-            name = "coin1";
-        } else if (sym == SDLK_6 || sc == SDL_SCANCODE_6 ||
-                   sym == SDLK_b || sc == SDL_SCANCODE_B) {
-            s->coin2 = down;
-            if (down) s->coin2_latch = 15;
-            name = "coin2";
-        }
-        if (debug && name)
-            fprintf(stderr, "destroyer input: %s %s\n", name, down ? "down" : "up");
+    bool old_coin1 = s->coin1;
+    bool old_coin2 = s->coin2;
+    s->start1 = rca_display_key_down(display, '1');
+    s->start2 = rca_display_key_down(display, '2');
+    s->right = rca_display_key_down(display, RCA_KEY_RIGHT);
+    s->left = rca_display_key_down(display, RCA_KEY_LEFT);
+    s->fire = rca_display_key_down(display, ' ');
+    s->service = rca_display_key_down(display, RCA_KEY_F2);
+    s->coin1 = rca_display_key_down(display, '5') ||
+               rca_display_key_down(display, 'a');
+    s->coin2 = rca_display_key_down(display, '6') ||
+               rca_display_key_down(display, 'b');
+    if (s->coin1 && !old_coin1) s->coin1_latch = 15;
+    if (s->coin2 && !old_coin2) s->coin2_latch = 15;
+
+    if (debug) {
+        if (s->start1) fprintf(stderr, "destroyer input: start1 down\n");
+        if (s->start2) fprintf(stderr, "destroyer input: start2 down\n");
+        if (s->left) fprintf(stderr, "destroyer input: left down\n");
+        if (s->right) fprintf(stderr, "destroyer input: right down\n");
+        if (s->fire) fprintf(stderr, "destroyer input: fire down\n");
+        if (s->service) fprintf(stderr, "destroyer input: service down\n");
+        if (s->coin1 && !old_coin1) fprintf(stderr, "destroyer input: coin1 down\n");
+        if (s->coin2 && !old_coin2) fprintf(stderr, "destroyer input: coin2 down\n");
     }
 }
 
@@ -511,22 +509,23 @@ static void destroyer_poll_vnc(RcaDestroyerState *s) {
 
 void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
     RcaDisplay *display = NULL;
-    if (cfg->display_type == JEMU_DISPLAY_SDL) {
-        if (cfg->vga == RCA_VGA_CDP1869)
-            display = rca_display_sdl_create_indexed("JEMU",
-                                                     DESTROYER_ROTATED_W,
-                                                     DESTROYER_ROTATED_H,
-                                                     cfg->display_scale,
-                                                     destroyer_palette,
-                                                     (int)(sizeof(destroyer_palette) /
-                                                           sizeof(destroyer_palette[0])));
-        else if (cfg->vga == RCA_VGA_NONE)
-            display = rca_display_none_create();
-        else
-            display = rca_display_sdl_create(cfg->display_scale);
-    } else {
+    if (cfg->vga == RCA_VGA_CDP1869)
+        display = rca_display_create_indexed(cfg->display_type, "JEMU",
+                                             DESTROYER_ROTATED_W,
+                                             DESTROYER_ROTATED_H,
+                                             cfg->display_scale,
+                                             destroyer_palette,
+                                             (int)(sizeof(destroyer_palette) /
+                                                   sizeof(destroyer_palette[0])));
+    else if (cfg->vga == RCA_VGA_NONE)
         display = rca_display_none_create();
-    }
+    else
+        display = rca_display_create_mono(cfg->display_type, "JEMU",
+                                          CDP1861_DISPLAY_W,
+                                          CDP1861_DISPLAY_H,
+                                          cfg->display_scale,
+                                          0xFFFFFFFFu,
+                                          0xFF100080u);
     if (!display) {
         fprintf(stderr, "jemu-rca: failed to create Destroyer display\n");
         return;
@@ -538,7 +537,8 @@ void rca_destroyer_run(RcaDestroyerState *s, const RcaConfig *cfg) {
     while (!quit) {
         Uint32 t0 = SDL_GetTicks();
 
-        destroyer_poll_sdl(s, &quit);
+        if (cfg->display_type != JEMU_DISPLAY_NONE)
+            destroyer_poll_display(s, display, &quit);
         destroyer_poll_vnc(s);
         destroyer_sync_inputs(s);
 

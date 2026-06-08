@@ -7,6 +7,7 @@
 #include "devices/tape.h"
 #include "jemu/monitor.h"
 #include "jemu/vnc.h"
+#include "vga/rca_display.h"
 #include <stdlib.h>
 
 /* ── COSMAC VIP machine state ────────────────────────────────────────────── */
@@ -39,18 +40,6 @@ typedef struct RcaVipState {
     bool     ef2_down;
 } RcaVipState;
 
-/* ── RCA display abstraction (mirrors chip8's Chip8Display) ──────────────── */
-
-typedef struct RcaDisplay RcaDisplay;
-struct RcaDisplay {
-    /* render() is called each frame when draw_flag is set */
-    void (*render)(void *ctx, const uint8_t *vram, int w, int h);
-    void (*destroy)(void *ctx);
-    /* run() owns the main loop; NULL means SDL2 loop in machine.c */
-    void (*run)(RcaDisplay *d, RcaVipState *s, const RcaConfig *cfg);
-    void  *ctx;
-};
-
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 RcaVipState *rca_vip_create(const RcaConfig *cfg);
@@ -58,20 +47,4 @@ void         rca_vip_reset(RcaVipState *s, const RcaConfig *cfg);
 void         rca_vip_destroy(RcaVipState *s);
 void         rca_machine_run(RcaVipState *s, const RcaConfig *cfg);
 
-RcaDisplay  *rca_display_sdl_create(int scale);
-RcaDisplay  *rca_display_sdl_create_indexed(const char *title, int w, int h,
-                                            int scale,
-                                            const uint32_t *palette,
-                                            int n_colors);
-RcaDisplay  *rca_display_curses_create(void);
 void         rca_display_curses_poll_vip(RcaDisplay *d, RcaVipState *s, bool *quit);
-RcaDisplay  *rca_display_none_create(void);
-
-static inline void rca_display_render(RcaDisplay *d, const uint8_t *vram, int w, int h) {
-    d->render(d->ctx, vram, w, h);
-}
-static inline void rca_display_destroy(RcaDisplay *d) {
-    if (!d) return;
-    d->destroy(d->ctx);
-    free(d);
-}

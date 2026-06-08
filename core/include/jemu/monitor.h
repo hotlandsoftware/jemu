@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 
 /*
  * JEMU monitor — QEMU-style interactive console on stdin.
@@ -21,8 +22,28 @@ typedef enum {
 
 typedef struct JemuMonitor JemuMonitor;
 
+typedef enum {
+    JEMU_MEDIA_OK = 0,
+    JEMU_MEDIA_OK_RESET,
+    JEMU_MEDIA_ERR,
+} JemuMediaResult;
+
+typedef struct JemuMediaDevice {
+    const char *name;
+    const char *kind;
+    void       *ud;
+
+    JemuMediaResult (*change)(void *ud, const char *arg,
+                              char *err, size_t err_len);
+    JemuMediaResult (*eject)(void *ud, char *err, size_t err_len);
+    void (*status)(void *ud, char *buf, size_t buf_len);
+} JemuMediaDevice;
+
 JemuMonitor *jemu_monitor_create(void);
 void         jemu_monitor_destroy(JemuMonitor *mon);
+
+bool         jemu_monitor_register_media(JemuMonitor *mon,
+                                         const JemuMediaDevice *dev);
 
 /* Start the stdin reader thread (no-op if not a TTY). */
 void         jemu_monitor_start(JemuMonitor *mon);
