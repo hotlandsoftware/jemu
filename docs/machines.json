@@ -1,0 +1,13 @@
+[
+  { "alias": "apollo80",    "name": "Apollo 80",           "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Academy"  },
+  { "alias": "chip8",       "name": "CHIP-8 (Generic)",    "year": 1977, "cpu": "CHIP-8",      "core": "jemu-chip8", "status": "working", "gfx": true, "sound": false, "notes": ""                            },
+  { "alias": "altair2",     "name": "Cidelsa Altair II",   "year": 1980, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
+  { "alias": "destroyer",   "name": "Cidelsa Destroyer",   "year": 1980, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
+  { "alias": "cm1200",      "name": "Conic M-1200",        "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Conic"    },
+  { "alias": "cosmac-vip",  "name": "COSMAC VIP",          "year": 1977, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
+  { "alias": "mpt02j",      "name": "Hanimex MPT-02 Jeu",  "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Hanimex"  },
+  { "alias": "studio2",     "name": "RCA Studio II",       "year": 1977, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
+  { "alias": "sm1200",      "name": "Sheen M-1200",        "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Sheen"    },
+  { "alias": "mpt02",       "name": "Soundic MPT-02",      "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Soundic"  },
+  { "alias": "visicom",     "name": "Visicom COM-100",     "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Toshiba"  }
+]

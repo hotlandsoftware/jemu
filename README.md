@@ -14,7 +14,7 @@ make
 make GTK=1 # for GTK support
 ```
 # Targets
-See MACHINES.md
+See https://hotlandsoftware.github.io/jemu/
 
 # Why?
 To put it bluntly, I'm very curious to see how far AI agents have come, and I'm curious to see *how* many different machines we can make AI emulate with little reference. (And also because I wanted something like MAME with the power of QEMU that could run off a VNC server.) 
