@@ -116,7 +116,8 @@
             </div>
         </aside>
         <div>
-            <p class="description">Destroyer is a submarine arcade game produced by Cidelsa in 1980. It uses the RCA CDP1802 processor and CDP1869 video chip for colour graphics.</p>
+            <p class="description">Destroyer is an arcade game produced by Spanish company Cidelsa in 1980. Space Invaders-style shoot-em-up.
+                <br><br>This machine supports dip switches. You can use <code>dipswitch list</code> in the JEMU console for a list and <code>dipswitch (name) (value)</code> to set the value.</p>
 
             <div class="section-title">Run</div>
             <div class="run-block">./bin/jemu-rca -M destroyer -rom /path/to/roms/destroyer/</div>
@@ -167,7 +168,7 @@
                     <tr><td>Coinage</td><td class="key">0xC0</td><td><strong>A×1 / B×2</strong> (0xC0) · A×1.5 / B×3 (0x80) · A×2 / B×4 (0x40) · A×2.5 / B×5 (0x00)</td></tr>
                 </tbody>
             </table>
-            <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1.5rem"><strong>Bold</strong> = default. Set from the monitor: <code style="font-family:monospace">dip difficulty hard</code>, <code style="font-family:monospace">dip lives 4</code></p>
+            <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1.5rem"><strong>Bold</strong> = default. Set from the monitor: <code style="font-family:monospace">dipswitch difficulty hard</code>, <code style="font-family:monospace">dipswitch lives 4</code>, etc</p>
         </div>
     </div>
 </div>
