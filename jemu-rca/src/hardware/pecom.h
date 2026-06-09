@@ -1,6 +1,6 @@
 #pragma once
 #include "cdp1802.h"
-#include "cdp1861.h"
+#include "cdp1869.h"
 #include "rca.h"
 #include "devices/pcspk.h"
 #include "jemu/monitor.h"
@@ -10,29 +10,43 @@
 
 /* ── Pecom 32 machine state ──────────────────────────────────────────────── */
 
-#define PECOM32_ROM_SIZE       0x4000u   /* 16 KB */
 /*
- * Two 16 KB RAM banks:
- *   Bank 0: addresses 0x4000–0x7FFF  →  ram[0x0000–0x3FFF]
- *   Bank 1: addresses 0xC000–0xFFFF  →  ram[0x4000–0x7FFF]
- * ROM is visible (read-only) at 0x0000–0x3FFF and mirrored at 0x8000–0xBFFF.
+ * Memory map:
+ *   0x0000–0x7FFF  RAM bank 1 (32 KB)         — ram1[]
+ *   0x8000–0xBFFF  ROM (16 KB, read-only)      — rom[]
+ *   0xC000–0xF3FF  RAM bank 2 (13 KB)          — ram2[]
+ *   0xF400–0xF7FF  VIS-1870 char RAM (1 KB)    — cdp1869 char RAM
+ *   0xF800–0xFFFF  VIS-1870 page RAM (2 KB)    — cdp1869 page RAM
+ *
+ * Bootstrap: ROM also appears at 0x0000–0x3FFF on reset until OUT 1 fires.
  */
-#define PECOM32_RAM_SIZE       0x8000u   /* 2 × 16 KB = 32 KB */
+#define PECOM32_ROM_SIZE      0x4000u   /* 16 KB */
+#define PECOM32_RAM1_SIZE     0x8000u   /* 32 KB: 0x0000–0x7FFF */
+#define PECOM32_RAM2_SIZE     0x4000u   /* 16 KB: 0xC000–0xFFFF (VIS RAM at top) */
+#define PECOM32_CRAM_BASE     0xF400u   /* VIS-1870 char RAM start */
+#define PECOM32_PRAM_BASE     0xF800u   /* VIS-1870 page RAM start */
+
+#define PECOM32_CPU_HZ        2812500u
+#define PECOM32_FRAME_HZ      50u
+#define PECOM32_MCYCLES_PER_FRAME \
+    (PECOM32_CPU_HZ / CDP1802_CLOCKS_PER_MCYCLE / PECOM32_FRAME_HZ)
 
 typedef struct RcaPecom32State {
     Cdp1802          cpu;
-    Cdp1861          vdc;
+    Cdp1869          vis;
     const RcaConfig *cfg;
 
     uint8_t  rom[PECOM32_ROM_SIZE];
-    uint8_t  ram[PECOM32_RAM_SIZE];
+    uint8_t  ram1[PECOM32_RAM1_SIZE];
+    uint8_t  ram2[PECOM32_RAM2_SIZE];
 
-    /* Pixel framebuffer: 1 byte per pixel (0 or 1), 64 × 128 */
-    uint8_t  vram[CDP1861_DISPLAY_W * CDP1861_DISPLAY_H];
-    bool     draw_flag;
+    bool     boot_mirror;   /* ROM mirrored at 0x0000 until first OUT 1 */
+    uint8_t  iogroup;       /* current I/O group: 0=keyboard, 2=VIS-1870 */
 
-    /* Keyboard: pending ASCII character, -1 = none */
-    int      ascii_key;
+    bool     key_shift;
+    bool     key_ctrl;
+    bool     key_caps;
+    bool     key_esc;
 
     JemuMonitor  *monitor;
     JemuVncServer *vnc;

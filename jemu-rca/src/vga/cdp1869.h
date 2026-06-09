@@ -8,7 +8,7 @@
 #define CDP1869_VISIBLE_W 240
 #define CDP1869_VISIBLE_H 216
 #define CDP1869_PAGE_RAM_SIZE 0x800
-#define CDP1869_CHAR_RAM_SIZE 0x800
+#define CDP1869_CHAR_RAM_SIZE 0x1000
 
 /* PAL frame timing (50 Hz, 312 lines × 14 machine cycles) */
 #define CDP1869_LINES_TOTAL        312

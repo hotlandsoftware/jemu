@@ -9,6 +9,6 @@
   { "alias": "studio2",     "name": "RCA Studio II",       "year": 1977, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
   { "alias": "sm1200",      "name": "Sheen M-1200",        "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Sheen"    },
   { "alias": "mpt02",       "name": "Soundic MPT-02",      "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Soundic"  },
-  { "alias": "pecom32",     "name": "Pecom 32",            "year": 1985, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "not working", "gfx": false, "sound": false,  "notes": "Supports BASIC 3" },
+  { "alias": "pecom32",     "name": "Pecom 32",            "year": 1985, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "partially working", "gfx": true, "sound": false,  "notes": "Supports BASIC 3" },
   { "alias": "visicom",     "name": "Visicom COM-100",     "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Toshiba"  }
 ]

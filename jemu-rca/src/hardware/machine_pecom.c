@@ -1,5 +1,4 @@
 #include "pecom.h"
-#include "devices/vip_devices.h"
 #include "jemu/jemu.h"
 #include "jemu/memory.h"
 #include <SDL2/SDL.h>
@@ -7,115 +6,187 @@
 #include <string.h>
 #include <stdio.h>
 
-/* ── Memory map ──────────────────────────────────────────────────────────────
- *
- *  0x0000–0x3FFF  ROM (16 KB, read-only)
- *  0x4000–0x7FFF  RAM bank 0 (16 KB)
- *  0x8000–0xBFFF  ROM mirror (same 16 KB, read-only)
- *  0xC000–0xFFFF  RAM bank 1 (16 KB)
- *
- * Total user RAM: 32 KB.
- * ──────────────────────────────────────────────────────────────────────────── */
+/* ── Palette ─────────────────────────────────────────────────────────────── */
 
-static inline uint8_t *pecom_ram_ptr(RcaPecom32State *s, uint16_t addr) {
-    if (addr >= 0x4000u && addr < 0x8000u)
-        return &s->ram[addr - 0x4000u];
-    if (addr >= 0xC000u)
-        return &s->ram[0x4000u + (addr - 0xC000u)];
-    return NULL;
+/*
+ * CDP1869 8-color palette: bits [2]=R, [1]=B, [0]=G.
+ * Pecom 32 BASIC uses white background (bkg=7) with black text (color=0).
+ */
+static uint32_t pecom_palette[8];
+
+static void pecom_init_palette(void) {
+    static bool done = false;
+    if (done) return;
+    static const uint32_t rgb[8] = {
+        0xFF000000u, /* 0 = black   */
+        0xFF00FF00u, /* 1 = green   */
+        0xFF0000FFu, /* 2 = blue    */
+        0xFF00FFFFu, /* 3 = cyan    */
+        0xFFFF0000u, /* 4 = red     */
+        0xFFFFFF00u, /* 5 = yellow  */
+        0xFFFF00FFu, /* 6 = magenta */
+        0xFFFFFFFFu, /* 7 = white   */
+    };
+    for (int i = 0; i < 8; i++)
+        pecom_palette[i] = rgb[i];
+    done = true;
 }
 
-/* ── CPU callbacks ───────────────────────────────────────────────────────── */
+/* ── Memory map ──────────────────────────────────────────────────────────── */
 
 static uint8_t pecom_mem_read(uint16_t addr, void *ud) {
     RcaPecom32State *s = ud;
-    /* ROM visible at 0x0000–0x3FFF and mirrored at 0x8000–0xBFFF */
-    if (addr < 0x4000u || (addr >= 0x8000u && addr < 0xC000u))
-        return s->rom[addr & (PECOM32_ROM_SIZE - 1u)];
-    uint8_t *p = pecom_ram_ptr(s, addr);
-    return p ? *p : 0xFFu;
+
+    /* ROM at 0x8000–0xBFFF */
+    if (addr >= 0x8000u && addr < 0xC000u)
+        return s->rom[addr - 0x8000u];
+
+    /* Bootstrap: ROM mirrored at 0x0000–0x3FFF until first OUT 1 */
+    if (s->boot_mirror && addr < 0x4000u)
+        return s->rom[addr];
+
+    /* VIS-1870 char RAM: 0xF400–0xF7FF */
+    if (addr >= PECOM32_CRAM_BASE && addr < PECOM32_PRAM_BASE)
+        return cdp1869_char_read(&s->vis, addr - PECOM32_CRAM_BASE);
+
+    /* VIS-1870 page RAM: 0xF800–0xFFFF */
+    if (addr >= PECOM32_PRAM_BASE)
+        return cdp1869_page_read(&s->vis, addr - PECOM32_PRAM_BASE);
+
+    /* RAM bank 2: 0xC000–0xF3FF */
+    if (addr >= 0xC000u)
+        return s->ram2[addr - 0xC000u];
+
+    /* RAM bank 1: 0x0000–0x7FFF */
+    return s->ram1[addr];
 }
 
 static void pecom_mem_write(uint16_t addr, uint8_t val, void *ud) {
     RcaPecom32State *s = ud;
-    uint8_t *p = pecom_ram_ptr(s, addr);
-    if (p) *p = val;
+
+    /* ROM and ROM mirror: read-only */
+    if (addr >= 0x8000u && addr < 0xC000u) return;
+    if (s->boot_mirror && addr < 0x4000u)  return;
+
+    /* VIS-1870 char RAM: 0xF400–0xF7FF */
+    if (addr >= PECOM32_CRAM_BASE && addr < PECOM32_PRAM_BASE) {
+        cdp1869_char_write(&s->vis, addr - PECOM32_CRAM_BASE, val);
+        return;
+    }
+
+    /* VIS-1870 page RAM: 0xF800–0xFFFF */
+    if (addr >= PECOM32_PRAM_BASE) {
+        cdp1869_page_write(&s->vis, addr - PECOM32_PRAM_BASE, val);
+        return;
+    }
+
+    /* RAM bank 2: 0xC000–0xF3FF */
+    if (addr >= 0xC000u) {
+        s->ram2[addr - 0xC000u] = val;
+        return;
+    }
+
+    /* RAM bank 1: 0x0000–0x7FFF */
+    s->ram1[addr] = val;
 }
+
+/* ── I/O ─────────────────────────────────────────────────────────────────── */
 
 static uint8_t pecom_io_in(uint8_t port, void *ud) {
     RcaPecom32State *s = ud;
-    if (port == 1) {
-        /* IN 1: enable CDP1861 display; return pending key or 0xFF */
-        cdp1861_set_display(&s->vdc, true);
-        if (s->ascii_key >= 0) {
-            uint8_t k = (uint8_t)s->ascii_key;
-            s->ascii_key = -1;
-            s->cpu.EF[3] = true;   /* EF4 deasserted: no more key */
-            return k;
+
+    if (s->iogroup == 0) {
+        /* Iogroup 0: keyboard matrix on INP 3 */
+        if (port == 3) {
+            /* Address bus (R[X]) lower 6 bits select key row; all released = 0xFF */
+            (void)s->cpu.memory_addr; /* row address — stub, no keys pressed */
+            return 0xFFu;
         }
-        return 0xFFu;
     }
+    /* Iogroup 2 INP: not used by Pecom 32 ROM */
     return 0xFFu;
 }
 
 static void pecom_io_out(uint8_t port, uint8_t val, void *ud) {
     RcaPecom32State *s = ud;
-    (void)val;
-    if (port == 1)
-        cdp1861_set_display(&s->vdc, false);
-}
 
-static void pecom_sync(void *ud) {
-    RcaPecom32State *s = ud;
-    cdp1861_sync(&s->vdc, &s->cpu);
+    if (port == 1) {
+        /* OUT 1: iogroup selector (bit 1 = 1 → iogroup 2 / VIS-1870) */
+        bool grp2 = (val & 0x02u) != 0;
+        if (!grp2 && s->iogroup == 2) {
+            /* switching back to iogroup 0 */
+        }
+        s->iogroup = grp2 ? 2 : 0;
+        /* Any OUT 1 removes the boot ROM mirror */
+        s->boot_mirror = false;
+        return;
+    }
+
+    if (s->iogroup == 2 && port >= 3 && port <= 7) {
+        cdp1869_out(&s->vis, port, s->cpu.memory_addr, val);
+        return;
+    }
 }
 
 static void pecom_q_out(uint8_t q, void *ud) {
     RcaPecom32State *s = ud;
+    s->vis.q = q & 1u;
     rca_pcspk_set_gate(s->speaker, q);
 }
 
-/* ── DMA callback: CDP1861 → vram ────────────────────────────────────────── */
+/* ── Per-frame video timing ──────────────────────────────────────────────── */
 
-static void pecom_dma_out(uint8_t *data, void *ud) {
-    RcaPecom32State *s = ud;
-    Cdp1861 *vdc = &s->vdc;
+static void pecom_video_timing(RcaPecom32State *s, unsigned frame_cycle) {
+    /* Map CPU frame cycle → VIS-1870 scan line */
+    unsigned vis_line =
+        (frame_cycle * CDP1869_LINES_TOTAL) / PECOM32_MCYCLES_PER_FRAME;
 
-    int row = vdc->line_counter - CDP1861_FIRST_LINE;
-    if (row < 0 || row >= CDP1861_DISPLAY_H) return;
+    /* non_display: true during VBlank (lines 0–47 and 264–311) */
+    bool nd = (vis_line < CDP1869_DISPLAY_START ||
+               vis_line >= CDP1869_DISPLAY_END);
+    s->vis.non_display = nd || s->vis.dispoff;
 
-    int byte_col = vdc->display_addr % CDP1861_BYTES_PER_LINE;
-    uint8_t b = *data;
-    for (int bit = 0; bit < 8; bit++)
-        s->vram[row * CDP1861_DISPLAY_W + byte_col * 8 + bit] = (b >> (7 - bit)) & 1u;
+    /* EF1 = non_display: high during VBlank, low during active display */
+    s->cpu.EF[0] = s->vis.non_display;
 
-    vdc->display_addr++;
-    if (vdc->display_addr >= (CDP1861_DISPLAY_W * CDP1861_DISPLAY_H / 8))
-        vdc->display_addr = 0;
+    /* EF2 = SHIFT, EF3 = CAPS (active-low, inverted per hardware), EF4 = ESC */
+    s->cpu.EF[1] = !s->key_shift;
+    s->cpu.EF[2] = s->key_caps;   /* pol=rev: EF3=1 when CAPS off, 0 when on */
+    s->cpu.EF[3] = !s->key_esc;
 
-    s->draw_flag = true;
+    /* Single interrupt per frame at "line 2" (start of VBlank) */
+    unsigned int_cycle =
+        (2u * PECOM32_MCYCLES_PER_FRAME) / CDP1869_LINES_TOTAL;
+    if (frame_cycle == int_cycle)
+        cdp1802_request_irq(&s->cpu);
 }
 
 /* ── Machine lifecycle ───────────────────────────────────────────────────── */
 
 RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
+    pecom_init_palette();
+
     RcaPecom32State *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
 
-    s->cfg       = cfg;
-    s->ascii_key = -1;
+    s->cfg         = cfg;
+    s->boot_mirror = true;
+    s->iogroup     = 0;
+    s->key_caps    = true;   /* EF3 pol=rev: CAPS off → EF3=1 (active-low) */
 
     cdp1802_init(&s->cpu, NULL, 0);
     s->cpu.mem_read  = pecom_mem_read;
     s->cpu.mem_write = pecom_mem_write;
     s->cpu.io_in     = pecom_io_in;
     s->cpu.io_out    = pecom_io_out;
-    s->cpu.on_sync   = pecom_sync;
     s->cpu.q_out     = pecom_q_out;
     s->cpu.io_ud     = s;
+    /* on_sync not used — timing driven by pecom_video_timing in the run loop */
 
-    cdp1861_init(&s->vdc, pecom_dma_out, s);
-    s->vdc.lines_total = CDP1861_PAL_LINES_TOTAL;   /* PAL: 312 lines */
+    cdp1869_init(&s->vis);
+    cdp1869_set_page_ram_mask(&s->vis, 0x3FFu);  /* 1 KB page RAM */
+    cdp1869_set_char_stride(&s->vis, 16u);        /* 16 scan lines / char */
+    cdp1869_set_block_cpu_access(&s->vis, true);  /* block during active display */
 
     s->monitor = jemu_monitor_create();
 
@@ -127,28 +198,25 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
 
     if (cfg->vnc_addr) {
         s->vnc = jemu_vnc_create(cfg->vnc_addr,
-                                 CDP1861_DISPLAY_W * cfg->display_scale,
-                                 CDP1861_DISPLAY_H * cfg->display_scale);
-        jemu_vnc_set_colors(s->vnc, 0xFFFFFFu, 0x000000u);
+                                 CDP1869_VISIBLE_W * cfg->display_scale,
+                                 CDP1869_VISIBLE_H * cfg->display_scale);
+        jemu_vnc_set_palette(s->vnc, pecom_palette,
+                             (int)(sizeof(pecom_palette) / sizeof(pecom_palette[0])));
     }
 
-    /* Load ROM(s) */
+    /* Load ROM — file is the raw 16 KB image, mapped at 0x8000 */
     for (int i = 0; i < cfg->n_roms; i++) {
-        uint32_t addr = cfg->roms[i].addr;
-        if (addr >= PECOM32_ROM_SIZE) {
-            fprintf(stderr, "jemu-rca: pecom32: ROM address 0x%04X out of range\n", addr);
-            free(s);
-            return NULL;
-        }
+        uint32_t off = cfg->roms[i].addr;
         JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
         size_t len = 0;
-        if (!jemu_mem_load_file(&tmp, addr, cfg->roms[i].path, &len)) {
-            fprintf(stderr, "jemu-rca: pecom32: failed to load '%s'\n", cfg->roms[i].path);
+        if (!jemu_mem_load_file(&tmp, off, cfg->roms[i].path, &len)) {
+            fprintf(stderr, "jemu-rca: pecom32: failed to load '%s'\n",
+                    cfg->roms[i].path);
             free(s);
             return NULL;
         }
-        printf("jemu-rca: %zu bytes @ 0x%04X  ← %s\n",
-               len, addr, cfg->roms[i].path);
+        printf("jemu-rca: %zu bytes @ ROM+0x%04X  ← %s\n",
+               len, off, cfg->roms[i].path);
     }
 
     return s;
@@ -156,13 +224,18 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
 
 void rca_pecom32_reset(RcaPecom32State *s, const RcaConfig *cfg) {
     cdp1802_reset(&s->cpu);
+    cdp1869_reset(&s->vis);
+    cdp1869_set_page_ram_mask(&s->vis, 0x3FFu);
+    cdp1869_set_char_stride(&s->vis, 16u);
+    cdp1869_set_block_cpu_access(&s->vis, true);
     rca_pcspk_set_gate(s->speaker, 0);
-    cdp1861_reset(&s->vdc);
-    s->vdc.lines_total = CDP1861_PAL_LINES_TOTAL;
-    memset(s->vram, 0, sizeof(s->vram));
-    s->draw_flag = true;
-    s->ascii_key = -1;
-    s->cpu.EF[3] = true;   /* EF4 idle: no key pending */
+
+    s->boot_mirror = true;
+    s->iogroup     = 0;
+    s->key_shift   = false;
+    s->key_ctrl    = false;
+    s->key_esc     = false;
+    s->key_caps    = true;
 
     for (int i = 0; i < cfg->n_roms; i++) {
         JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
@@ -178,37 +251,42 @@ void rca_pecom32_destroy(RcaPecom32State *s) {
     free(s);
 }
 
-/* ── Input helpers ───────────────────────────────────────────────────────── */
+/* ── Input polling ───────────────────────────────────────────────────────── */
 
-static void pecom_poll_display(RcaPecom32State *s, RcaDisplay *display, bool *quit) {
+static void pecom_poll_display(RcaPecom32State *s, RcaDisplay *display,
+                               bool *quit) {
     rca_display_poll(display);
     if (rca_display_should_quit(display)) {
         *quit = true;
         return;
     }
 
-    uint32_t keysym = rca_display_pop_keysym(display);
-    if (keysym) {
-        int ascii = (int)keysym;
-        if (ascii >= 'a' && ascii <= 'z') ascii -= 32;
-        if ((ascii >= 0x20 && ascii <= 0x7e) ||
-             ascii == '\r' || ascii == '\n' || ascii == '\b' || ascii == 0x7f) {
-            if (ascii == '\n') ascii = '\r';
-            if (ascii == 0x7f) ascii = '\b';
-            s->ascii_key = ascii;
-            s->cpu.EF[3] = false;   /* EF4 asserted: key waiting */
+    s->key_esc = rca_display_key_down(display, RCA_KEY_ESCAPE);
+    (void)s; /* shift/ctrl handled via VNC key events */
+}
+
+static void pecom_poll_vnc(RcaPecom32State *s) {
+    JemuVncKeyEvent ev;
+    while (jemu_vnc_pop_key_event(s->vnc, &ev)) {
+        switch (ev.keysym) {
+        case 0xffe1: case 0xffe2: s->key_shift = ev.down; break; /* Shift */
+        case 0xffe3: case 0xffe4: s->key_ctrl  = ev.down; break; /* Ctrl */
+        case 0xff1b:               s->key_esc   = ev.down; break; /* Esc */
+        default: break;
         }
     }
 }
 
-/* ── SDL run loop ────────────────────────────────────────────────────────── */
+/* ── Run loop ────────────────────────────────────────────────────────────── */
 
 void rca_pecom32_run(RcaPecom32State *s, const RcaConfig *cfg) {
-    RcaDisplay *display = rca_display_create_mono(cfg->display_type, "JEMU | Pecom 32",
-                                                   CDP1861_DISPLAY_W,
-                                                   CDP1861_DISPLAY_H,
-                                                   cfg->display_scale,
-                                                   0xFFFFFFFFu, 0xFF000000u);
+    RcaDisplay *display = rca_display_create_indexed(
+        cfg->display_type, "JEMU",
+        CDP1869_VISIBLE_W, CDP1869_VISIBLE_H,
+        cfg->display_scale,
+        pecom_palette,
+        (int)(sizeof(pecom_palette) / sizeof(pecom_palette[0])));
+
     if (!display) {
         fprintf(stderr, "jemu-rca: pecom32: failed to create display\n");
         return;
@@ -220,29 +298,19 @@ void rca_pecom32_run(RcaPecom32State *s, const RcaConfig *cfg) {
         return;
     }
 
-    /* PAL: 312 lines × 14 mcycles = 4368 per frame, ~50 Hz */
-    const Uint32 frame_ms = 20u;
-    const int mcycles_per_frame = CDP1861_PAL_MCYCLES_PER_FRAME;
+    /* PAL 50 Hz */
+    const Uint32 frame_ms = 1000u / PECOM32_FRAME_HZ;
 
     jemu_monitor_start(s->monitor);
     SDL_StartTextInput();
-
-    /* EF4 idle: no key */
-    s->cpu.EF[3] = true;
 
     bool quit = false;
     while (!quit) {
         Uint32 t0 = SDL_GetTicks();
 
-        pecom_poll_display(s, display, &quit);
-        if (quit) break;
-
-        /* VNC keyboard */
-        int vnc_ascii = rca_vp601_vnc_keysym_to_ascii(jemu_vnc_pop_keysym(s->vnc));
-        if (vnc_ascii >= 0) {
-            s->ascii_key = vnc_ascii;
-            s->cpu.EF[3] = false;
-        }
+        if (cfg->display_type != JEMU_DISPLAY_NONE)
+            pecom_poll_display(s, display, &quit);
+        pecom_poll_vnc(s);
 
         JemuMonCmd cmd;
         while ((cmd = jemu_monitor_poll(s->monitor)) != JEMU_MON_NONE) {
@@ -252,24 +320,23 @@ void rca_pecom32_run(RcaPecom32State *s, const RcaConfig *cfg) {
         }
         if (quit) break;
 
-        if (jemu_monitor_is_paused(s->monitor)) {
-            Uint32 elapsed = SDL_GetTicks() - t0;
-            if (elapsed < frame_ms) SDL_Delay(frame_ms - elapsed);
-            continue;
-        }
+        if (!jemu_monitor_is_paused(s->monitor)) {
+            for (unsigned i = 0; i < PECOM32_MCYCLES_PER_FRAME; i++) {
+                pecom_video_timing(s, i);
+                cdp1802_step(&s->cpu);
+            }
 
-        /* EF4: active-low key-available strobe */
-        s->cpu.EF[3] = (s->ascii_key < 0);
+            /* Force VBlank at frame boundary so RAM is accessible */
+            s->vis.non_display = true;
+            s->cpu.EF[0] = true;
 
-        for (int i = 0; i < mcycles_per_frame; i++) {
-            s->cpu.EF[3] = (s->ascii_key < 0);
-            cdp1802_step(&s->cpu);
-        }
-
-        if (s->draw_flag) {
-            rca_display_render(display, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
-            jemu_vnc_update(s->vnc, s->vram, CDP1861_DISPLAY_W, CDP1861_DISPLAY_H);
-            s->draw_flag = false;
+            if (s->vis.dirty) {
+                cdp1869_render(&s->vis);
+                rca_display_render(display, s->vis.bitmap,
+                                   CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
+                jemu_vnc_update(s->vnc, s->vis.bitmap,
+                                CDP1869_VISIBLE_W, CDP1869_VISIBLE_H);
+            }
         }
 
         Uint32 elapsed = SDL_GetTicks() - t0;
