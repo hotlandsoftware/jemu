@@ -149,10 +149,10 @@ static void pecom_video_timing(RcaPecom32State *s, unsigned frame_cycle) {
     /* EF1 = non_display: high during VBlank, low during active display */
     s->cpu.EF[0] = s->vis.non_display;
 
-    /* EF2 = SHIFT, EF3 = CAPS (active-low, inverted per hardware), EF4 = ESC */
-    s->cpu.EF[1] = !s->key_shift;
-    s->cpu.EF[2] = s->key_caps;   /* pol=rev: EF3=1 when CAPS off, 0 when on */
-    s->cpu.EF[3] = !s->key_esc;
+    /* EF2 = SHIFT (active-high), EF3 = CAPS (pol=rev: 0=on, 1=off), EF4 = ESC (active-high) */
+    s->cpu.EF[1] = s->key_shift;
+    s->cpu.EF[2] = !s->key_caps;
+    s->cpu.EF[3] = s->key_esc;
 
     /* Single interrupt per frame at "line 2" (start of VBlank) */
     unsigned int_cycle =
@@ -172,7 +172,7 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
     s->cfg         = cfg;
     s->boot_mirror = true;
     s->iogroup     = 0;
-    s->key_caps    = true;   /* EF3 pol=rev: CAPS off → EF3=1 (active-low) */
+    s->key_caps    = false;  /* caps lock off at startup */
 
     cdp1802_init(&s->cpu, NULL, 0);
     s->cpu.mem_read  = pecom_mem_read;
@@ -235,7 +235,7 @@ void rca_pecom32_reset(RcaPecom32State *s, const RcaConfig *cfg) {
     s->key_shift   = false;
     s->key_ctrl    = false;
     s->key_esc     = false;
-    s->key_caps    = true;
+    s->key_caps    = false;
 
     for (int i = 0; i < cfg->n_roms; i++) {
         JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
