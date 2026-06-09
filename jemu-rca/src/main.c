@@ -2,6 +2,7 @@
 #include "hardware/vip.h"
 #include "hardware/destroyer.h"
 #include "hardware/studio2.h"
+#include "hardware/pecom.h"
 #include "hardware/romdb.h"
 #include "devices/vip_devices.h"
 #include "jemu/jemu.h"
@@ -25,6 +26,7 @@ static const JemuDevDesc machines[] = {
     {"mpt02",      "Victory MPT-02 (alias for studio2)"},
     {"mpt02j",     "Hanimex MPT-02 (alias for studio2)"},
     {"mtc9016",    "Mustang 9016 (alias for studio2)"},
+    {"pecom32",    "Pecom 32 (CDP1802 + CDP1861 Pixie, 16 KB ROM, 32 KB RAM, PAL)"},
     {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
     {"sm1200",     "Sheen M1200 (alias for studio2)"},
     {"visicom",     "Visicom COM-100 (alias for studio2)"},
@@ -196,6 +198,7 @@ int main(int argc, char *argv[]) {
         else if (strcmp(args.machine, "destroyer")  == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
         else if (strcmp(args.machine, "mpt02")      == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "pecom32")    == 0) { cfg.machine = RCA_MACHINE_PECOM32; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "mpt02j")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "mtc9016")    == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "sm1200")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
@@ -212,6 +215,8 @@ int main(int argc, char *argv[]) {
     if (cfg.machine == RCA_MACHINE_DESTROYER)
         cfg.keyboard = RCA_KEYBOARD_NONE;
     if (cfg.machine == RCA_MACHINE_STUDIO2 && !args.vga)
+        cfg.vga = RCA_VGA_CDP1861;
+    if (cfg.machine == RCA_MACHINE_PECOM32 && !args.vga)
         cfg.vga = RCA_VGA_CDP1861;
 
     /* RCA-specific remainder flags */
@@ -338,7 +343,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (cfg.machine == RCA_MACHINE_DESTROYER) {
+    if (cfg.machine == RCA_MACHINE_PECOM32) {
+        RcaPecom32State *s = rca_pecom32_create(&cfg);
+        if (!s) {
+            if (cfg.display_type == JEMU_DISPLAY_SDL ||
+                cfg.display_type == JEMU_DISPLAY_CURSES ||
+                cfg.display_type == JEMU_DISPLAY_NONE) SDL_Quit();
+            return 1;
+        }
+        rca_pecom32_run(s, &cfg);
+        rca_pecom32_destroy(s);
+    } else if (cfg.machine == RCA_MACHINE_DESTROYER) {
         RcaDestroyerState *s = rca_destroyer_create(&cfg);
         if (!s) {
             if (cfg.display_type == JEMU_DISPLAY_SDL ||

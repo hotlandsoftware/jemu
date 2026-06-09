@@ -422,6 +422,9 @@ void rca_studio2_run(RcaStudio2State *s, const RcaConfig *cfg) {
         }
     }
 
+    printf("jemu-rca: %llu machine cycles, %llu instructions\n",
+           (unsigned long long)s->cpu.cycle_count,
+           (unsigned long long)s->cpu.insn_count);
     if (!is_curses)
         jemu_monitor_stop(s->monitor);
     rca_display_destroy(display);

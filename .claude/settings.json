@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s 'https://raw.githubusercontent.com/mamedev/mame/mame0288/src/mame/efo/cidelsa.h')",
+      "Bash(curl -s 'https://raw.githubusercontent.com/mamedev/mame/mame0288/src/mame/efo/cidelsa_v.cpp')",
+      "Bash(pkill -9 -f jemu-rca)",
+      "Bash(timeout 5 ./bin/jemu-rca -M pecom32 -rom roms/090786.bin -display curses)",
+      "Bash(echo \"exit=$?\")"
+    ]
+  }
+}

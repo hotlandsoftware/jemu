@@ -61,6 +61,9 @@ static const RcaRomDbEntry rom_db[] = {
     { "be7a432e440a5614e3790f7d7105d64cf0b02c0c62f4991c0ad8d9bab8271118",  0x0400, "sm1200", "86677b.ic14" },
     { "d826c3bdb10be43f62e6fb15a31dc34c6c62a7afd6249fcdb6d40d46f4522d3c",  0x0c00, "sm1200", "87201.ic12"  },
 
+    /* Pecom 32 */
+    { "a8104b9bf317828bd480874d8c434bdbf6eb3990a81f45fc7ac4010a1aa70f36", 0x0000, "pecom32", "090786.bin" },
+
     /* RCA Studio II */
     { "1945550109cec3a8003dd64cd70c02bf78326f2f7f91be1fc6fca8067647c54c", 0x0000, "studio2", "84932.ic11" },
     { "e894799e1757cedd73a17cbacad1e0c9a3846eae1b9cfa9d3f6c2a038cd452e6", 0x0200, "studio2", "84933.ic12" },

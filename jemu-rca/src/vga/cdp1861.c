@@ -31,26 +31,27 @@ void cdp1861_sync(Cdp1861 *vdc, Cdp1802 *cpu) {
         cpu->EF[0] = !blanking;   /* EF1 = 1 active, 0 blanking */
     }
 
-    if (vdc->display_on) {
-        /*
-         * Interrupt at machine cycle 2 of line 62 (one line before active
-         * display). Sets int_fired, which gates DMA for this frame.
-         * int_fired is cleared when display turns off (cdp1861_set_display).
-         */
-        if (lc == 62 && mc == 2) {
-            cdp1802_request_irq(cpu);
-            vdc->int_fired = true;
-        }
-
-        /*
-         * DMA-out at machine cycle 4 of each active line, but ONLY after the
-         * frame interrupt has fired. This mirrors Emma02's vidInt_ gate —
-         * without it the first DMA fires with an uninitialised R[0].
-         */
-        if (vdc->int_fired &&
-            lc >= CDP1861_FIRST_LINE && lc <= CDP1861_LAST_LINE && mc == 4)
-            cdp1802_request_dma_out(cpu, 8, vdc->dma_out_cb, vdc->dma_out_ud);
+    /*
+     * Interrupt fires at machine cycle 2 of line 62 unconditionally —
+     * the real CDP1861 always asserts INT at this point regardless of the
+     * DISP (display_on) state.  Gating it on display_on causes a deadlock
+     * on machines (e.g. Pecom 32) where the ISR is the only code that
+     * calls INP to assert DISP.
+     */
+    if (lc == 62 && mc == 2) {
+        cdp1802_request_irq(cpu);
+        vdc->int_fired = true;
     }
+
+    /*
+     * DMA-out at machine cycle 4 of each active line, but ONLY after the
+     * frame interrupt has fired and display is enabled.  This mirrors
+     * Emma02's vidInt_ gate — without it the first DMA fires with an
+     * uninitialised R[0].
+     */
+    if (vdc->display_on && vdc->int_fired &&
+        lc >= CDP1861_FIRST_LINE && lc <= CDP1861_LAST_LINE && mc == 4)
+        cdp1802_request_dma_out(cpu, 8, vdc->dma_out_cb, vdc->dma_out_ud);
 
     if (++vdc->mcycle == CDP1861_MCYCLES_PER_LINE) {
         vdc->mcycle = 0;

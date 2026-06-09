@@ -68,6 +68,7 @@ RCA_SRC := \
 	jemu-rca/src/hardware/machine_vip.c \
 	jemu-rca/src/hardware/machine_destroyer.c \
 	jemu-rca/src/hardware/machine_studio2.c \
+	jemu-rca/src/hardware/machine_pecom.c \
 	jemu-rca/src/hardware/romdb.c
 
 ifdef GTK

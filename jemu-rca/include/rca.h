@@ -8,6 +8,7 @@ typedef enum {
     RCA_MACHINE_COSMAC_VIP,
     RCA_MACHINE_DESTROYER,
     RCA_MACHINE_STUDIO2,
+    RCA_MACHINE_PECOM32,
 } RcaMachineType;
 
 typedef enum {
