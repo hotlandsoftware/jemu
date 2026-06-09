@@ -92,18 +92,56 @@ static void pecom_mem_write(uint16_t addr, uint8_t val, void *ud) {
 
 /* ── I/O ─────────────────────────────────────────────────────────────────── */
 
+/* Key-to-latch-code mapping for the Pecom 32 keyboard.
+ * The ROM scans latch values 0–63, checking EF3 for each.
+ * This table maps SDL keysyms to latch codes.  -1 = unmapped.
+ *
+ * NOTE: This mapping is a best-guess.  The real Pecom 32 keyboard matrix
+ * may assign different latch codes.  Adjust as needed for the ROM. */
+static const struct {
+    uint32_t keysym;
+    int      latch;
+} pecom_keymap[] = {
+    /* Row 0: digits */
+    {'0',  0}, {'1',  1}, {'2',  2}, {'3',  3}, {'4',  4},
+    {'5',  5}, {'6',  6}, {'7',  7}, {'8',  8}, {'9',  9},
+    /* Row 1: QWERTY top */
+    {'q', 10}, {'w', 11}, {'e', 12}, {'r', 13}, {'t', 14},
+    {'y', 15}, {'u', 16}, {'i', 17}, {'o', 18}, {'p', 19},
+    /* Row 2: QWERTY middle */
+    {'a', 20}, {'s', 21}, {'d', 22}, {'f', 23}, {'g', 24},
+    {'h', 25}, {'j', 26}, {'k', 27}, {'l', 28},
+    /* Row 3: QWERTY bottom */
+    {'z', 29}, {'x', 30}, {'c', 31}, {'v', 32}, {'b', 33},
+    {'n', 34}, {'m', 35},
+    /* Special keys */
+    {' ',          36},  /* Space */
+    {'\r',         37},  /* Enter (CR) */
+    {'\b',         38},  /* Backspace */
+    {',',          39},  {'.',          40},  {'/',  41},
+    {';',          42},  {'\'',        43},
+    {'[',          44},  {']',          45},
+    {'-',          46},  {'=',          47},
+    {'`',          48},  {'\\',        49},
+    /* Cursor keys (SDLK values) */
+    {SDLK_UP,       50},
+    {SDLK_DOWN,     51},
+    {SDLK_LEFT,     52},
+    {SDLK_RIGHT,    53},
+};
+#define PECOM_N_KEYS (sizeof(pecom_keymap) / sizeof(pecom_keymap[0]))
+
 static uint8_t pecom_io_in(uint8_t port, void *ud) {
     RcaPecom32State *s = ud;
 
-    if (s->iogroup == 0) {
-        /* Iogroup 0: keyboard matrix on INP 3 */
-        if (port == 3) {
-            /* Address bus (R[X]) lower 6 bits select key row; all released = 0xFF */
-            (void)s->cpu.memory_addr; /* row address — stub, no keys pressed */
-            return 0xFFu;
-        }
+    if (s->iogroup == 0 && port == 3) {
+        /* Iogroup 0, INP 3: keyboard column data.
+         * R[X] selects the key row via lower 6 address bits.
+         * Standard pull-up: 0xFF = all released, a 0-bit = key pressed.
+         * Stub: return 0xFF (no keys). */
+        (void)s->cpu.memory_addr;
+        return 0xFFu;
     }
-    /* Iogroup 2 INP: not used by Pecom 32 ROM */
     return 0xFFu;
 }
 
@@ -113,12 +151,21 @@ static void pecom_io_out(uint8_t port, uint8_t val, void *ud) {
     if (port == 1) {
         /* OUT 1: iogroup selector (bit 1 = 1 → iogroup 2 / VIS-1870) */
         bool grp2 = (val & 0x02u) != 0;
-        if (!grp2 && s->iogroup == 2) {
-            /* switching back to iogroup 0 */
-        }
         s->iogroup = grp2 ? 2 : 0;
         /* Any OUT 1 removes the boot ROM mirror */
         s->boot_mirror = false;
+        return;
+    }
+
+    if (s->iogroup == 0) {
+        /* Iogroup 0: keyboard latch on OUT 3.
+         * The ROM writes a latch value (0–63) to select which key to check,
+         * then reads EF3 to see if that key is pressed. */
+        if (port == 3) {
+            s->key_latch = val & 0x3Fu;  /* lower 6 bits */
+            return;
+        }
+        /* Other OUT ports in iogroup 0 are unused by Pecom 32 ROM */
         return;
     }
 
@@ -149,9 +196,20 @@ static void pecom_video_timing(RcaPecom32State *s, unsigned frame_cycle) {
     /* EF1 = non_display: high during VBlank, low during active display */
     s->cpu.EF[0] = s->vis.non_display;
 
-    /* EF2 = SHIFT (active-high), EF3 = CAPS (pol=rev: 0=on, 1=off), EF4 = ESC (active-high) */
+    /* EF2 = SHIFT (active-high) */
     s->cpu.EF[1] = s->key_shift;
-    s->cpu.EF[2] = !s->key_caps;
+
+    /* EF3 = keyboard latch status:
+     *   ef.reverse = 1 → EF3=1 when key RELEASED, 0 when PRESSED.
+     *   ROM uses BN3 (branch if EF3=1) to spin-wait for a key press. */
+    {
+        bool key_down = false;
+        if (s->key_latch >= 0 && s->key_latch < 64)
+            key_down = s->keys[s->key_latch];
+        s->cpu.EF[2] = !key_down;  /* 1 = released, 0 = pressed */
+    }
+
+    /* EF4 = ESC (active-high) */
     s->cpu.EF[3] = s->key_esc;
 
     /* Single interrupt per frame at "line 2" (start of VBlank) */
@@ -172,7 +230,10 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
     s->cfg         = cfg;
     s->boot_mirror = true;
     s->iogroup     = 0;
-    s->key_caps    = false;  /* caps lock off at startup */
+    s->key_latch   = -1;  /* no latch selected yet */
+
+    for (int i = 0; i < 64; i++)
+        s->keys[i] = false;
 
     cdp1802_init(&s->cpu, NULL, 0);
     s->cpu.mem_read  = pecom_mem_read;
@@ -235,7 +296,10 @@ void rca_pecom32_reset(RcaPecom32State *s, const RcaConfig *cfg) {
     s->key_shift   = false;
     s->key_ctrl    = false;
     s->key_esc     = false;
-    s->key_caps    = false;
+    s->key_latch   = -1;
+
+    for (int i = 0; i < 64; i++)
+        s->keys[i] = false;
 
     for (int i = 0; i < cfg->n_roms; i++) {
         JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
@@ -253,6 +317,19 @@ void rca_pecom32_destroy(RcaPecom32State *s) {
 
 /* ── Input polling ───────────────────────────────────────────────────────── */
 
+static void pecom_poll_keys(RcaPecom32State *s, RcaDisplay *display) {
+    if (!display) return;
+    for (size_t i = 0; i < PECOM_N_KEYS; i++) {
+        int latch = pecom_keymap[i].latch;
+        if (latch >= 0 && latch < 64)
+            s->keys[latch] = rca_display_key_down(display, pecom_keymap[i].keysym);
+    }
+
+    s->key_esc   = rca_display_key_down(display, RCA_KEY_ESCAPE);
+    s->key_shift = rca_display_key_down(display, SDLK_LSHIFT)
+                || rca_display_key_down(display, SDLK_RSHIFT);
+}
+
 static void pecom_poll_display(RcaPecom32State *s, RcaDisplay *display,
                                bool *quit) {
     rca_display_poll(display);
@@ -261,13 +338,22 @@ static void pecom_poll_display(RcaPecom32State *s, RcaDisplay *display,
         return;
     }
 
-    s->key_esc = rca_display_key_down(display, RCA_KEY_ESCAPE);
-    (void)s; /* shift/ctrl handled via VNC key events */
+    pecom_poll_keys(s, display);
 }
 
 static void pecom_poll_vnc(RcaPecom32State *s) {
     JemuVncKeyEvent ev;
     while (jemu_vnc_pop_key_event(s->vnc, &ev)) {
+        /* Map VNC keysym to keyboard latch */
+        for (size_t i = 0; i < PECOM_N_KEYS; i++) {
+            if ((uint32_t)ev.keysym == pecom_keymap[i].keysym) {
+                int latch = pecom_keymap[i].latch;
+                if (latch >= 0 && latch < 64)
+                    s->keys[latch] = ev.down;
+                break;
+            }
+        }
+        /* Modifier keys */
         switch (ev.keysym) {
         case 0xffe1: case 0xffe2: s->key_shift = ev.down; break; /* Shift */
         case 0xffe3: case 0xffe4: s->key_ctrl  = ev.down; break; /* Ctrl */

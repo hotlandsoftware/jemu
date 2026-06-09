@@ -43,9 +43,16 @@ typedef struct RcaPecom32State {
     bool     boot_mirror;   /* ROM mirrored at 0x0000 until first OUT 1 */
     uint8_t  iogroup;       /* current I/O group: 0=keyboard, 2=VIS-1870 */
 
+    /* ── Keyboard latch ──────────────────────────────────────────────── */
+    /* The Pecom 32 uses a key-latch mechanism:
+     *   OUT 3 (iogroup 0) → stores latch value (0–63 selects which key)
+     *   EF3 = 0 when the latched key is pressed, 1 when released
+     * The ROM scans latch values 0–63, checking EF3 for each one. */
+    int      key_latch;     /* last OUT 3 value, -1 if none yet */
+    bool     keys[64];      /* which latch keys are physically held */
+
     bool     key_shift;
     bool     key_ctrl;
-    bool     key_caps;
     bool     key_esc;
 
     JemuMonitor  *monitor;
