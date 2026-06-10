@@ -26,7 +26,7 @@ static const JemuDevDesc machines[] = {
     {"mpt02",      "Victory MPT-02 (alias for studio2)"},
     {"mpt02j",     "Hanimex MPT-02 (alias for studio2)"},
     {"mtc9016",    "Mustang 9016 (alias for studio2)"},
-    {"pecom32",    "Pecom 32 (CDP1802 + CDP1861 Pixie, 16 KB ROM, 32 KB RAM, PAL)"},
+    {"pecom32",    "Pecom 32 (CDP1802 + CDP1869/1870 VIS-1870, 16 KB ROM, 32 KB RAM, PAL)"},
     {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
     {"sm1200",     "Sheen M1200 (alias for studio2)"},
     {"visicom",     "Visicom COM-100 (alias for studio2)"},
@@ -217,7 +217,7 @@ int main(int argc, char *argv[]) {
     if (cfg.machine == RCA_MACHINE_STUDIO2 && !args.vga)
         cfg.vga = RCA_VGA_CDP1861;
     if (cfg.machine == RCA_MACHINE_PECOM32 && !args.vga)
-        cfg.vga = RCA_VGA_CDP1861;
+        cfg.vga = RCA_VGA_CDP1869;
 
     /* RCA-specific remainder flags */
     uint32_t positional_addr = 0x0000;
