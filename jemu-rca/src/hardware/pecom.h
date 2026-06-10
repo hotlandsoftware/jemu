@@ -26,10 +26,9 @@
 #define PECOM32_CRAM_BASE     0xF400u   /* VIS-1870 char RAM start */
 #define PECOM32_PRAM_BASE     0xF800u   /* VIS-1870 page RAM start */
 
-#define PECOM32_CPU_HZ        2812500u
 #define PECOM32_FRAME_HZ      50u
-#define PECOM32_MCYCLES_PER_FRAME \
-    (PECOM32_CPU_HZ / CDP1802_CLOCKS_PER_MCYCLE / PECOM32_FRAME_HZ)
+/* CDP1869 PAL timing: 312 lines × 14 machine cycles per line */
+#define PECOM32_MCYCLES_PER_FRAME  CDP1869_MCYCLES_PER_FRAME
 
 typedef struct RcaPecom32State {
     Cdp1802          cpu;
@@ -43,17 +42,19 @@ typedef struct RcaPecom32State {
     bool     boot_mirror;   /* ROM mirrored at 0x0000 until first OUT 1 */
     uint8_t  iogroup;       /* current I/O group: 0=keyboard, 2=VIS-1870 */
 
-    /* ── Keyboard latch ──────────────────────────────────────────────── */
-    /* The Pecom 32 uses a key-latch mechanism:
-     *   OUT 3 (iogroup 0) → stores latch value (0–63 selects which key)
-     *   EF3 = 0 when the latched key is pressed, 1 when released
-     * The ROM scans latch values 0–63, checking EF3 for each one. */
-    int      key_latch;     /* last OUT 3 value, -1 if none yet */
-    bool     keys[64];      /* which latch keys are physically held */
+    /* ── Keyboard matrix ────────────────────────────────────────────── */
+    /* The Pecom 32 uses a matrix keyboard scanned via IN 3.
+     * The IN 3 instruction uses the memory address bus (R[X] & 0x3F) as the
+     * row selector; the returned byte has bits 0–1 set for each pressed key
+     * in that row (active-high: 1 = pressed).
+     * EF1 = CTRL (AND with VIS display), EF2 = SHIFT, EF3 = CAPS (pol=rev),
+     * EF4 = ESC. */
+    uint8_t  keys[64];      /* key matrix: keys[row] bitmask, bits 0/1 per key */
 
     bool     key_shift;
     bool     key_ctrl;
     bool     key_esc;
+    bool     caps_locked;
 
     JemuMonitor  *monitor;
     JemuVncServer *vnc;
