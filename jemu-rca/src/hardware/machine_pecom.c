@@ -266,7 +266,9 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
     s->boot_mirror = true;
     s->iogroup     = 0;
 
-    memset(s->keys, 0, sizeof(s->keys));
+    memset(s->keys,       0, sizeof(s->keys));
+    memset(s->keys_live,  0, sizeof(s->keys_live));
+    memset(s->keys_latch, 0, sizeof(s->keys_latch));
 
     cdp1802_init(&s->cpu, NULL, 0);
     s->cpu.mem_read  = pecom_mem_read;
@@ -331,7 +333,9 @@ void rca_pecom32_reset(RcaPecom32State *s, const RcaConfig *cfg) {
     s->key_esc     = false;
     s->caps_locked = false;
 
-    memset(s->keys, 0, sizeof(s->keys));
+    memset(s->keys,       0, sizeof(s->keys));
+    memset(s->keys_live,  0, sizeof(s->keys_live));
+    memset(s->keys_latch, 0, sizeof(s->keys_latch));
 
     for (int i = 0; i < cfg->n_roms; i++) {
         JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
@@ -377,6 +381,13 @@ static void pecom_poll_display(RcaPecom32State *s, RcaDisplay *display,
 }
 
 static void pecom_poll_vnc(RcaPecom32State *s) {
+    if (!s->vnc) return;
+
+    /* Clear the one-frame latch set in the previous poll so fast taps don't
+     * linger.  The latch ensures a key pressed AND released within one 20 ms
+     * frame window is still seen by the ROM's keyboard scan. */
+    memset(s->keys_latch, 0, sizeof(s->keys_latch));
+
     JemuVncKeyEvent ev;
     while (jemu_vnc_pop_key_event(s->vnc, &ev)) {
         uint32_t ks = (uint32_t)ev.keysym;
@@ -393,7 +404,8 @@ static void pecom_poll_vnc(RcaPecom32State *s) {
         }
 
         /* Normalise VNC special keysyms to values used in pecom_keymap */
-        if (ks == 0xff0d) ks = '\r';           /* Return */
+        if (ks == 0xff08) ks = SDLK_END;   /* Backspace → BS/DEL key (row 0x0B) */
+        if (ks == 0xff0d) ks = '\r';
         if (ks == 0xff50) ks = SDLK_HOME;
         if (ks == 0xff57) ks = SDLK_END;
         if (ks == 0xff52) ks = SDLK_UP;
@@ -405,15 +417,22 @@ static void pecom_poll_vnc(RcaPecom32State *s) {
 
         for (size_t i = 0; i < PECOM_N_KEYS; i++) {
             if (ks == pecom_keymap[i].keysym) {
-                uint8_t bit = (uint8_t)(1u << pecom_keymap[i].bit);
-                if (ev.down)
-                    s->keys[pecom_keymap[i].row] |= bit;
-                else
-                    s->keys[pecom_keymap[i].row] &= (uint8_t)~bit;
+                uint8_t  row = pecom_keymap[i].row;
+                uint8_t  bit = (uint8_t)(1u << pecom_keymap[i].bit);
+                if (ev.down) {
+                    s->keys_live[row]  |= bit;
+                    s->keys_latch[row] |= bit;  /* hold for this CPU frame */
+                } else {
+                    s->keys_live[row]  &= (uint8_t)~bit;
+                }
                 break;
             }
         }
     }
+
+    /* Merge live state with the one-frame latch into the ROM-visible array */
+    for (size_t i = 0; i < 64u; i++)
+        s->keys[i] = s->keys_live[i] | s->keys_latch[i];
 }
 
 /* ── Run loop ────────────────────────────────────────────────────────────── */
