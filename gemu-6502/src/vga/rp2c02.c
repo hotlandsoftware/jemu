@@ -129,7 +129,8 @@ void rp2c02_write(Rp2c02 *ppu, uint8_t reg, uint8_t val) {
             ppu->nmi_pending = true;
         break;
     case 1: /* PPUMASK */
-        ppu->ppumask = val;
+        ppu->ppumask_pending = val;
+        ppu->ppumask_delay   = 3; /* 2-5 PPU cycle hardware delay before taking effect */
         break;
     case 3: /* OAMADDR */
         ppu->oamaddr = val;
@@ -210,7 +211,7 @@ static void copy_y_from_t(Rp2c02 *ppu) {
 
 static void bg_shift_tick(Rp2c02 *ppu) {
     ppu->bg_shift_lo <<= 1;
-    ppu->bg_shift_hi <<= 1;
+    ppu->bg_shift_hi  = (ppu->bg_shift_hi << 1) | 1; /* serial-in tied high on 2C02 */
     ppu->bg_attr_lo  <<= 1;
     ppu->bg_attr_hi  <<= 1;
 }
@@ -388,6 +389,8 @@ static uint8_t output_pixel(Rp2c02 *ppu, int x) {
 /* ── Tick ────────────────────────────────────────────────────────────────── */
 
 void rp2c02_tick(Rp2c02 *ppu) {
+    if (ppu->ppumask_delay > 0 && --ppu->ppumask_delay == 0)
+        ppu->ppumask = ppu->ppumask_pending;
     int  sl         = ppu->scanline;
     int  dot        = ppu->dot;
     bool rendering  = (ppu->ppumask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR)) != 0;
@@ -461,8 +464,9 @@ void rp2c02_tick(Rp2c02 *ppu) {
 /* ── Init / Reset ────────────────────────────────────────────────────────── */
 
 void rp2c02_reset(Rp2c02 *ppu) {
-    ppu->ppuctrl  = 0;
-    ppu->ppumask  = 0;
+    ppu->ppuctrl        = 0;
+    ppu->ppumask        = 0;
+    ppu->ppumask_delay  = 0;
     ppu->ppustatus &= PPUSTAT_VBLANK;  /* keep VBlank, clear the rest */
     ppu->v = ppu->t = 0;
     ppu->x = 0;

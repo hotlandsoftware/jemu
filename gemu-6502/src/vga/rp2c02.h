@@ -49,6 +49,8 @@ typedef struct Rp2c02 {
     /* ── CPU-visible registers ────────────────────────────────────────── */
     uint8_t  ppuctrl;
     uint8_t  ppumask;
+    uint8_t  ppumask_pending; /* buffered write; takes effect after ppumask_delay ticks */
+    int      ppumask_delay;   /* PPU cycles until ppumask_pending is applied; 0 = idle */
     uint8_t  ppustatus;
     uint8_t  oamaddr;
     uint8_t  read_buf;      /* PPUDATA read buffer (delayed by one read) */

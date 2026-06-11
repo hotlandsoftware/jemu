@@ -6,6 +6,103 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#  include <direct.h>
+#  define gemu_mkdir(p) _mkdir(p)
+#else
+#  include <sys/stat.h>
+#  define gemu_mkdir(p) mkdir((p), 0755)
+#endif
+
+/* ── Battery-backed SRAM persistence ────────────────────────────────────── */
+
+static void nes_game_basename(const char *path, char *out, size_t len) {
+    const char *name = path;
+    for (const char *p = path; *p; p++)
+        if (*p == '/' || *p == '\\') name = p + 1;
+    const char *dot = strrchr(name, '.');
+    size_t n = dot ? (size_t)(dot - name) : strlen(name);
+    if (n >= len) n = len - 1;
+    memcpy(out, name, n);
+    out[n] = '\0';
+}
+
+static void nes_build_sav_path(const char *game, char *out, size_t len) {
+#ifdef _WIN32
+    const char *base = getenv("LOCALAPPDATA");
+    if (!base || !base[0]) base = getenv("APPDATA");
+    if (!base || !base[0]) base = "C:\\Users\\Default\\AppData\\Local";
+    snprintf(out, len, "%s\\gemu\\%s.sav", base, game);
+#else
+    const char *home = getenv("HOME");
+    if (!home || !home[0]) home = "/tmp";
+    snprintf(out, len, "%s/.gemu/%s.sav", home, game);
+#endif
+}
+
+static void nes_ensure_sav_dir(const char *sav_path) {
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%s", sav_path);
+    char *sep = strrchr(dir, '/');
+#ifdef _WIN32
+    char *sep2 = strrchr(dir, '\\');
+    if (sep2 > sep) sep = sep2;
+#endif
+    if (sep) { *sep = '\0'; gemu_mkdir(dir); }
+}
+
+static bool nes_battery_prompt(void) {
+    SDL_MessageBoxButtonData buttons[] = {
+        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Yes" },
+        { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "No"  },
+    };
+    SDL_MessageBoxData data = {
+        .flags       = SDL_MESSAGEBOX_INFORMATION,
+        .window      = NULL,
+        .title       = "Battery-backed Save",
+        .message     = "This game has a battery.\n"
+                       "Do you want GEMU to save data automatically?",
+        .numbuttons  = 2,
+        .buttons     = buttons,
+        .colorScheme = NULL,
+    };
+    int choice = 0;
+    SDL_ShowMessageBox(&data, &choice);
+    return choice == 1;
+}
+
+static void nes_sav_load(NesState *s) {
+    FILE *f = fopen(s->sav_path, "rb");
+    if (!f) return;
+    fread(s->prg_ram, 1, sizeof(s->prg_ram), f);
+    fclose(f);
+    printf("nes: loaded save '%s'\n", s->sav_path);
+}
+
+static void nes_sav_save(NesState *s) {
+    if (!s->battery_autosave || !s->sav_path[0]) return;
+    nes_ensure_sav_dir(s->sav_path);
+    FILE *f = fopen(s->sav_path, "wb");
+    if (!f) { fprintf(stderr, "nes: cannot write save '%s'\n", s->sav_path); return; }
+    fwrite(s->prg_ram, 1, sizeof(s->prg_ram), f);
+    fclose(f);
+    printf("nes: saved to '%s'\n", s->sav_path);
+}
+
+static void nes_battery_setup(NesState *s) {
+    if (!s->cart.has_battery) return;
+    char game[256];
+    nes_game_basename(s->cart_path_buf, game, sizeof(game));
+    nes_build_sav_path(game, s->sav_path, sizeof(s->sav_path));
+    FILE *existing = fopen(s->sav_path, "rb");
+    if (existing) {
+        fclose(existing);
+        s->battery_autosave = true;
+        nes_sav_load(s);
+    } else {
+        s->battery_autosave = nes_battery_prompt();
+    }
+}
 
 /* ── iNES cartridge loading ──────────────────────────────────────────────── */
 
@@ -270,18 +367,25 @@ static GemuMediaResult nes_media_change(void *ud, const char *arg,
         snprintf(err, err_len, "missing cartridge path");
         return GEMU_MEDIA_ERR;
     }
+    nes_sav_save(s);
+    s->battery_autosave = false;
+    s->sav_path[0] = '\0';
     free(s->prg); s->prg = NULL;
     free(s->chr); s->chr = NULL;
     if (!ines_load(s, arg)) {
         snprintf(err, err_len, "failed to load '%s'", arg);
         return GEMU_MEDIA_ERR;
     }
+    nes_battery_setup(s);
     return GEMU_MEDIA_OK_RESET;
 }
 
 static GemuMediaResult nes_media_eject(void *ud, char *err, size_t err_len) {
     (void)err; (void)err_len;
     NesState *s = ud;
+    nes_sav_save(s);
+    s->battery_autosave = false;
+    s->sav_path[0] = '\0';
     free(s->prg); s->prg = NULL;
     free(s->chr); s->chr = NULL;
     s->cart_path_buf[0] = '\0';
@@ -414,6 +518,8 @@ NesState *nes_create(const MosConfig *cfg) {
             fprintf(stderr, "nes: failed to create SDL window\n");
     }
 
+    nes_battery_setup(s);
+
     if (cfg->vnc_addr) {
         s->vnc = gemu_vnc_create(cfg->vnc_addr, RP2C02_WIDTH, RP2C02_HEIGHT);
         if (s->vnc)
@@ -427,6 +533,7 @@ NesState *nes_create(const MosConfig *cfg) {
 }
 
 void nes_destroy(NesState *s) {
+    nes_sav_save(s);
     apu2a03_destroy(&s->apu);
     gemu_monitor_destroy(s->monitor);
     nes_display_destroy(s->display);
