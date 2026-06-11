@@ -34,7 +34,7 @@ CHIP8_SRC := \
 
 ifdef WINDOWS
 CHIP8_CFLAGS  += -DGEMU_NO_CURSES
-CHIP8_LDFLAGS += -lws2_32
+CHIP8_LDFLAGS += -lws2_32 -mconsole
 else
 CHIP8_SRC     += gemu-chip8/src/vga/display_curses.c
 CHIP8_LDFLAGS += -lncursesw
@@ -87,7 +87,7 @@ RCA_SRC := \
 
 ifdef WINDOWS
 RCA_CFLAGS  += -DGEMU_NO_CURSES
-RCA_LDFLAGS += -lws2_32
+RCA_LDFLAGS += -lws2_32 -mconsole
 else
 RCA_SRC     += gemu-rca/src/vga/display_curses.c
 RCA_LDFLAGS += -lncursesw
@@ -141,7 +141,7 @@ MOS_CFLAGS := $(BASE_CFLAGS) \
 	$(SDL2_CFLAGS)
 MOS_LDFLAGS := $(SDL2_LIBS) -pthread
 ifdef WINDOWS
-MOS_LDFLAGS += -lws2_32
+MOS_LDFLAGS += -lws2_32 -mconsole
 endif
 
 MOS_CORE_SRC := \
