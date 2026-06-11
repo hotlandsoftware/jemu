@@ -1,11 +1,24 @@
-#define _POSIX_C_SOURCE 199309L
+#ifndef _WIN32
+#  define _POSIX_C_SOURCE 199309L
+#endif
 #include "chip8.h"
 #include "gemu/memory.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
+
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+static inline void chip8_sleep_frame(void) { Sleep(1000 / CHIP8_TIMER_HZ); }
+#else
+#  include <time.h>
+static inline void chip8_sleep_frame(void) {
+    struct timespec ts = {0, 1000000000L / CHIP8_TIMER_HZ};
+    nanosleep(&ts, NULL);
+}
+#endif
 
 static const uint8_t chip8_font[CHIP8_FONT_BYTES] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, /* 0 */
@@ -87,9 +100,11 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
     case GEMU_DISPLAY_SDL:
         display = chip8_display_sdl_create(cfg->display_scale);
         break;
+#ifndef GEMU_NO_CURSES
     case GEMU_DISPLAY_CURSES:
         display = chip8_display_curses_create();
         break;
+#endif
 #ifdef GEMU_GTK
     case GEMU_DISPLAY_GTK:
         display = chip8_display_gtk_create(cfg->display_scale, s->monitor);
@@ -119,7 +134,6 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
 
     /* Headless loop — VNC-only or silent bench */
     if (cfg->display_type == GEMU_DISPLAY_NONE) {
-        struct timespec ts = {0, 1000000000 / CHIP8_TIMER_HZ};
         const int insns_frame = cfg->cpu_hz / CHIP8_TIMER_HZ;
         bool running = true;
         while (running) {
@@ -133,7 +147,7 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                 } else if (cmd == GEMU_MON_CUSTOM) gemu_monitor_unknown_command(s->monitor);
             }
             if (!running || gemu_monitor_is_paused(s->monitor)) {
-                nanosleep(&ts, NULL);
+                chip8_sleep_frame();
                 continue;
             }
             memcpy(s->keys_prev, s->keys, CHIP8_NUM_KEYS);
@@ -147,7 +161,7 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                         break;
                     }
                 }
-                nanosleep(&ts, NULL);
+                chip8_sleep_frame();
                 continue;
             }
             int budget = insns_frame;
@@ -164,7 +178,7 @@ void chip8_machine_run(Chip8State *s, const Chip8Config *cfg) {
                 gemu_vnc_update(s->vnc, s->vram, CHIP8_DISPLAY_W, CHIP8_DISPLAY_H);
                 s->draw_flag = false;
             }
-            nanosleep(&ts, NULL);
+            chip8_sleep_frame();
         }
         printf("gemu-chip8: %llu instructions executed, %llu TB hits, %llu misses\n",
                (unsigned long long)s->insn_count,

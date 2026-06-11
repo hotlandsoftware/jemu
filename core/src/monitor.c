@@ -2,10 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <ctype.h>
+#ifdef _WIN32
+#  include <io.h>
+#  define isatty(fd)   _isatty(fd)
+#  define STDIN_FILENO 0
+#  define strcasecmp   _stricmp
+#else
+#  include <strings.h>
+#  include <unistd.h>
+#endif
 
 #define QUEUE_SIZE 32
 #define MEDIA_DEVICE_MAX 16

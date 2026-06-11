@@ -56,7 +56,9 @@ RcaDisplay *rca_display_gtk_create_indexed(const char *title, int w, int h,
                                            const uint32_t *palette,
                                            int n_colors, GemuMonitor *mon);
 #endif
+#ifndef GEMU_NO_CURSES
 RcaDisplay *rca_display_curses_create(void);
+#endif
 RcaDisplay *rca_display_none_create(void);
 RcaDisplay *rca_display_create_mono(GemuDisplayType type, const char *title,
                                     int w, int h, int scale,

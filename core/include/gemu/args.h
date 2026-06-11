@@ -1,6 +1,7 @@
 #pragma once
 #include "display.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 /*
  * Universal argument parser shared by all gemu binaries.
@@ -57,3 +58,15 @@ typedef struct {
 bool gemu_args_parse(int argc, char **argv,
                      const GemuArgsDef *def, GemuArgs *out,
                      int *rem_argc, char **rem_argv);
+
+/*
+ * Parse an "ADDR:FILE" or plain "FILE" argument.
+ *
+ * Returns  1: colon syntax found — *addr set from the hex/decimal prefix,
+ *             *path points to the character after the colon.
+ * Returns  0: no colon — *addr is unchanged, *path == arg.
+ * Returns -1: malformed input (empty addr or empty path after colon);
+ *             an error is printed to stderr using prog as the program name.
+ */
+int gemu_parse_addr_arg(const char *prog, const char *arg,
+                        uint32_t *addr, const char **path);

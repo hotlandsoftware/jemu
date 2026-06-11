@@ -227,13 +227,16 @@ RcaDisplay *rca_display_create_mono(GemuDisplayType type, const char *title,
                                     GemuMonitor *mon) {
     switch (type) {
     case GEMU_DISPLAY_SDL:
+        (void)mon;
         return rca_display_sdl_create_mono(title, w, h, scale, on, off);
 #ifdef GEMU_GTK
     case GEMU_DISPLAY_GTK:
         return rca_display_gtk_create_mono(title, w, h, scale, on, off, mon);
 #endif
+#ifndef GEMU_NO_CURSES
     case GEMU_DISPLAY_CURSES:
         return rca_display_curses_create();
+#endif
     default:
         return rca_display_none_create();
     }
@@ -245,6 +248,7 @@ RcaDisplay *rca_display_create_indexed(GemuDisplayType type, const char *title,
                                        GemuMonitor *mon) {
     switch (type) {
     case GEMU_DISPLAY_SDL:
+        (void)mon;
         return rca_display_sdl_create_indexed(title, w, h, scale,
                                               palette, n_colors);
 #ifdef GEMU_GTK
@@ -252,8 +256,10 @@ RcaDisplay *rca_display_create_indexed(GemuDisplayType type, const char *title,
         return rca_display_gtk_create_indexed(title, w, h, scale,
                                               palette, n_colors, mon);
 #endif
+#ifndef GEMU_NO_CURSES
     case GEMU_DISPLAY_CURSES:
         return rca_display_curses_create();
+#endif
     default:
         return rca_display_none_create();
     }

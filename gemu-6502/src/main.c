@@ -32,6 +32,9 @@ static const GemuArgsDef def = {
     .cpus       = cpus,     .n_cpus     = (int)GEMU_ARRAY_LEN(cpus),
     .vgas       = vgas,     .n_vgas     = (int)GEMU_ARRAY_LEN(vgas),
     .display_mask = GEMU_DISP_F(GEMU_DISPLAY_SDL)
+#ifdef GEMU_GTK
+                  | GEMU_DISP_F(GEMU_DISPLAY_GTK)
+#endif
                   | GEMU_DISP_F(GEMU_DISPLAY_NONE),
     .vnc_support  = true,
     .extra_help =
@@ -63,24 +66,9 @@ static bool add_rom(MosConfig *cfg, uint32_t addr, const char *path) {
 }
 
 static bool parse_rom_arg(MosConfig *cfg, const char *arg) {
-    const char *colon = strchr(arg, ':');
-    if (!colon)
-        return add_rom(cfg, 0x0000u, arg);
-    if (colon == arg) {
-        fprintf(stderr, "gemu-6502: -rom expects ADDR:FILE or FILE, got '%s'\n", arg);
-        return false;
-    }
-    char addr_buf[32];
-    size_t addr_len = (size_t)(colon - arg);
-    if (addr_len >= sizeof(addr_buf)) addr_len = sizeof(addr_buf) - 1;
-    memcpy(addr_buf, arg, addr_len);
-    addr_buf[addr_len] = '\0';
-    uint32_t addr = (uint32_t)strtoul(addr_buf, NULL, 0);
-    const char *path = colon + 1;
-    if (!*path) {
-        fprintf(stderr, "gemu-6502: missing file path in '%s'\n", arg);
-        return false;
-    }
+    uint32_t addr = 0;
+    const char *path;
+    if (gemu_parse_addr_arg("gemu-6502", arg, &addr, &path) < 0) return false;
     return add_rom(cfg, addr, path);
 }
 
@@ -192,14 +180,15 @@ int main(int argc, char *argv[]) {
     cfg.display_scale = args.display_scale;
     cfg.vnc_addr      = args.vnc_addr;
 
-    /* VNC with no explicit -display → headless */
-    if (cfg.vnc_addr && !args.display_explicit)
-        cfg.display_type = GEMU_DISPLAY_NONE;
-
-    /* NES without any display preference → open SDL window */
+    /* NES without any display preference → GTK if available, else SDL */
     if (cfg.machine == MOS_MACHINE_NES
-        && !cfg.vnc_addr && !args.display_explicit)
+        && !cfg.vnc_addr && !args.display_explicit) {
+#ifdef GEMU_GTK
+        cfg.display_type = GEMU_DISPLAY_GTK;
+#else
         cfg.display_type = GEMU_DISPLAY_SDL;
+#endif
+    }
 
     /* NES default: standard controller on port 0 if no -device was given */
     if (cfg.machine == MOS_MACHINE_NES && cfg.n_ports == 0)
@@ -208,7 +197,8 @@ int main(int argc, char *argv[]) {
     /* NES default sound: 2A03 when any output is active; silent when headless.
      * Skipped if the user already chose -soundhw explicitly. */
     if (cfg.machine == MOS_MACHINE_NES && !cfg.sound_explicit && cfg.cart_path) {
-        bool has_output = (cfg.display_type == GEMU_DISPLAY_SDL);
+        bool has_output = (cfg.display_type == GEMU_DISPLAY_SDL ||
+                           cfg.display_type == GEMU_DISPLAY_GTK);
         if (has_output)
             cfg.sound = MOS_SOUND_2A03;
     }

@@ -50,7 +50,9 @@ static const GemuArgsDef def = {
     .cpus         = cpus,     .n_cpus     = (int)(sizeof cpus     / sizeof *cpus),
     .vgas         = vgas,     .n_vgas     = (int)(sizeof vgas     / sizeof *vgas),
     .display_mask = GEMU_DISP_F(GEMU_DISPLAY_SDL)
+#ifndef GEMU_NO_CURSES
                   | GEMU_DISP_F(GEMU_DISPLAY_CURSES)
+#endif
                   | GEMU_DISP_F(GEMU_DISPLAY_NONE)
 #ifdef GEMU_GTK
                   | GEMU_DISP_F(GEMU_DISPLAY_GTK)
@@ -115,28 +117,13 @@ static bool infer_rom_addr(const char *path, uint32_t *addr) {
 
 /* Parse "0xADDR:path/to/file", "ADDR:path/to/file", or infer from "FILE". */
 static bool parse_rom_arg(RcaConfig *cfg, const char *arg) {
-    const char *colon = strchr(arg, ':');
-    if (!colon) {
-        uint32_t addr = 0;
+    uint32_t addr = 0;
+    const char *path;
+    int r = gemu_parse_addr_arg("gemu-rca", arg, &addr, &path);
+    if (r < 0) return false;
+    if (r == 0) {
         if (!infer_rom_addr(arg, &addr) && cfg->machine == RCA_MACHINE_DESTROYER)
             addr = (uint32_t)cfg->n_roms * 0x0800u;
-        return add_rom(cfg, addr, arg);
-    }
-    if (colon == arg) {
-        fprintf(stderr, "gemu-rca: -rom expects ADDR:FILE or FILE, got '%s'\n", arg);
-        return false;
-    }
-    /* Copy address portion so strtoul can read it as a C string */
-    char addr_buf[32];
-    size_t addr_len = (size_t)(colon - arg);
-    if (addr_len >= sizeof(addr_buf)) addr_len = sizeof(addr_buf) - 1;
-    memcpy(addr_buf, arg, addr_len);
-    addr_buf[addr_len] = '\0';
-    uint32_t addr = (uint32_t)strtoul(addr_buf, NULL, 0);
-    const char *path = colon + 1;
-    if (*path == '\0') {
-        fprintf(stderr, "gemu-rca: -rom missing file path in '%s'\n", arg);
-        return false;
     }
     return add_rom(cfg, addr, path);
 }
@@ -284,20 +271,11 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(rem[i], "-tape") == 0 && i + 1 < nrem) {
             const char *v = rem[++i];
-            /* Accept either "FILE" or "ADDR:FILE" */
-            const char *colon = strchr(v, ':');
-            if (colon && colon != v) {
-                char addr_buf[32] = {0};
-                size_t alen = (size_t)(colon - v);
-                if (alen < sizeof(addr_buf)) {
-                    memcpy(addr_buf, v, alen);
-                    cfg.tape_addr = (uint16_t)strtoul(addr_buf, NULL, 0);
-                }
-                cfg.tape_path = colon + 1;
-            } else {
-                cfg.tape_path = v;
-                cfg.tape_addr = 0x0000;
-            }
+            uint32_t tape_addr = 0;
+            const char *tape_path;
+            if (gemu_parse_addr_arg("gemu-rca", v, &tape_addr, &tape_path) < 0) return 1;
+            cfg.tape_addr = (uint16_t)tape_addr;
+            cfg.tape_path = tape_path;
         } else if (strcmp(rem[i], "-cartridge") == 0 && i + 1 < nrem) {
             cfg.cartridge_path = rem[++i];
         } else {
@@ -316,10 +294,6 @@ int main(int argc, char *argv[]) {
     cfg.vnc_addr      = args.vnc_addr;
     if (cfg.vnc_addr)
         cfg.sound_hw = RCA_SOUND_NONE;
-    /* VNC with no explicit -display → headless, matching gemu-chip8. */
-    if (cfg.vnc_addr && !args.display_explicit)
-        cfg.display_type = GEMU_DISPLAY_NONE;
-
     if (cfg.n_roms == 0 && cfg.machine != RCA_MACHINE_GENERIC) {
         const char *alias = args.machine ? args.machine : "studio2";
         rca_romdb_print_needed(alias);
@@ -336,59 +310,31 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (cfg.display_type == GEMU_DISPLAY_SDL ||
-        cfg.display_type == GEMU_DISPLAY_CURSES ||
-        cfg.display_type == GEMU_DISPLAY_NONE) {
-        if (SDL_Init(0) < 0) {
-            fprintf(stderr, "gemu-rca: SDL_Init failed: %s\n", SDL_GetError());
-            return 1;
-        }
+    bool sdl_up = (cfg.display_type == GEMU_DISPLAY_SDL ||
+#ifndef GEMU_NO_CURSES
+                   cfg.display_type == GEMU_DISPLAY_CURSES ||
+#endif
+                   cfg.display_type == GEMU_DISPLAY_NONE);
+    if (sdl_up && SDL_Init(0) < 0) {
+        fprintf(stderr, "gemu-rca: SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
     }
 
+    int rc = 1;
     if (cfg.machine == RCA_MACHINE_PECOM32) {
         RcaPecom32State *s = rca_pecom32_create(&cfg);
-        if (!s) {
-            if (cfg.display_type == GEMU_DISPLAY_SDL ||
-                cfg.display_type == GEMU_DISPLAY_CURSES ||
-                cfg.display_type == GEMU_DISPLAY_NONE) SDL_Quit();
-            return 1;
-        }
-        rca_pecom32_run(s, &cfg);
-        rca_pecom32_destroy(s);
+        if (s) { rca_pecom32_run(s, &cfg); rca_pecom32_destroy(s); rc = 0; }
     } else if (cfg.machine == RCA_MACHINE_DESTROYER) {
         RcaDestroyerState *s = rca_destroyer_create(&cfg);
-        if (!s) {
-            if (cfg.display_type == GEMU_DISPLAY_SDL ||
-                cfg.display_type == GEMU_DISPLAY_CURSES ||
-                cfg.display_type == GEMU_DISPLAY_NONE) SDL_Quit();
-            return 1;
-        }
-        rca_destroyer_run(s, &cfg);
-        rca_destroyer_destroy(s);
+        if (s) { rca_destroyer_run(s, &cfg); rca_destroyer_destroy(s); rc = 0; }
     } else if (cfg.machine == RCA_MACHINE_STUDIO2) {
         RcaStudio2State *s = rca_studio2_create(&cfg);
-        if (!s) {
-            if (cfg.display_type == GEMU_DISPLAY_SDL ||
-                cfg.display_type == GEMU_DISPLAY_CURSES ||
-                cfg.display_type == GEMU_DISPLAY_NONE) SDL_Quit();
-            return 1;
-        }
-        rca_studio2_run(s, &cfg);
-        rca_studio2_destroy(s);
+        if (s) { rca_studio2_run(s, &cfg); rca_studio2_destroy(s); rc = 0; }
     } else {
         RcaVipState *s = rca_vip_create(&cfg);
-        if (!s) {
-            if (cfg.display_type == GEMU_DISPLAY_SDL ||
-                cfg.display_type == GEMU_DISPLAY_CURSES ||
-                cfg.display_type == GEMU_DISPLAY_NONE) SDL_Quit();
-            return 1;
-        }
-        rca_machine_run(s, &cfg);
-        rca_vip_destroy(s);
+        if (s) { rca_machine_run(s, &cfg); rca_vip_destroy(s); rc = 0; }
     }
 
-    if (cfg.display_type == GEMU_DISPLAY_SDL ||
-        cfg.display_type == GEMU_DISPLAY_CURSES ||
-        cfg.display_type == GEMU_DISPLAY_NONE) SDL_Quit();
-    return 0;
+    if (sdl_up) SDL_Quit();
+    return rc;
 }

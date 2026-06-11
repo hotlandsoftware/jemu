@@ -1,13 +1,21 @@
 CC          := gcc
 BASE_CFLAGS := -Wall -Wextra -O2 -std=c11 -Icore/include -pthread
 
+# Windows (MinGW-w64 / MSYS2) detection
+ifeq ($(OS),Windows_NT)
+  WINDOWS    := 1
+  EXESUFFIX  := .exe
+else
+  EXESUFFIX  :=
+endif
+
 SDL2_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null || echo -I/usr/include/SDL2)
 SDL2_LIBS   := $(shell sdl2-config --libs   2>/dev/null || echo -lSDL2)
 
 # ── CHIP-8 ───────────────────────────────────────────────────────────────────
 
 CHIP8_CFLAGS := $(BASE_CFLAGS) -Igemu-chip8/include $(SDL2_CFLAGS)
-CHIP8_LDFLAGS = $(SDL2_LIBS) -lncursesw -pthread
+CHIP8_LDFLAGS  = $(SDL2_LIBS) -pthread
 
 CORE_SRC := \
 	core/src/memory.c \
@@ -22,8 +30,15 @@ CHIP8_SRC := \
 	gemu-chip8/src/cpu/chip8_cpu.c \
 	gemu-chip8/src/hardware/machine.c \
 	gemu-chip8/src/vga/display_sdl.c \
-	gemu-chip8/src/vga/input_sdl.c \
-	gemu-chip8/src/vga/display_curses.c
+	gemu-chip8/src/vga/input_sdl.c
+
+ifdef WINDOWS
+CHIP8_CFLAGS  += -DGEMU_NO_CURSES
+CHIP8_LDFLAGS += -lws2_32
+else
+CHIP8_SRC     += gemu-chip8/src/vga/display_curses.c
+CHIP8_LDFLAGS += -lncursesw
+endif
 
 ifdef GTK
 CHIP8_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
@@ -46,7 +61,7 @@ RCA_CFLAGS := $(BASE_CFLAGS) \
 	-Igemu-rca/src/hardware \
 	-Igemu-rca/src/devices \
 	$(SDL2_CFLAGS)
-RCA_LDFLAGS := $(SDL2_LIBS) -lncursesw -pthread
+RCA_LDFLAGS := $(SDL2_LIBS) -pthread
 
 RCA_CORE_SRC := \
 	core/src/memory.c \
@@ -61,7 +76,6 @@ RCA_SRC := \
 	gemu-rca/src/vga/cdp1861.c \
 	gemu-rca/src/vga/cdp1869.c \
 	gemu-rca/src/vga/display_sdl.c \
-	gemu-rca/src/vga/display_curses.c \
 	gemu-rca/src/devices/vip_devices.c \
 	gemu-rca/src/devices/pcspk.c \
 	gemu-rca/src/devices/tape.c \
@@ -70,6 +84,14 @@ RCA_SRC := \
 	gemu-rca/src/hardware/machine_studio2.c \
 	gemu-rca/src/hardware/machine_pecom.c \
 	gemu-rca/src/hardware/romdb.c
+
+ifdef WINDOWS
+RCA_CFLAGS  += -DGEMU_NO_CURSES
+RCA_LDFLAGS += -lws2_32
+else
+RCA_SRC     += gemu-rca/src/vga/display_curses.c
+RCA_LDFLAGS += -lncursesw
+endif
 
 ifdef GTK
 RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
@@ -89,13 +111,13 @@ RCA_OBJ := $(patsubst %.c, $(RCA_BUILDDIR)/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
 .PHONY: all clean rca-force
 
-all: bin/gemu-chip8 bin/gemu-rca bin/gemu-6502
+all: bin/gemu-chip8$(EXESUFFIX) bin/gemu-rca$(EXESUFFIX) bin/gemu-6502$(EXESUFFIX)
 
-bin/gemu-chip8: $(CHIP8_OBJ)
+bin/gemu-chip8$(EXESUFFIX): $(CHIP8_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(CHIP8_LDFLAGS) $(EXTRA_LDFLAGS)
 
-bin/gemu-rca: rca-force $(RCA_OBJ)
+bin/gemu-rca$(EXESUFFIX): rca-force $(RCA_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $(filter %.o,$^) $(RCA_LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -118,6 +140,9 @@ MOS_CFLAGS := $(BASE_CFLAGS) \
 	-Igemu-6502/src/audio \
 	$(SDL2_CFLAGS)
 MOS_LDFLAGS := $(SDL2_LIBS) -pthread
+ifdef WINDOWS
+MOS_LDFLAGS += -lws2_32
+endif
 
 MOS_CORE_SRC := \
 	core/src/memory.c \
@@ -130,16 +155,25 @@ MOS_SRC := \
 	gemu-6502/src/main.c \
 	gemu-6502/src/cpu/mos6502.c \
 	gemu-6502/src/vga/rp2c02.c \
-	gemu-6502/src/vga/nes_sdl.c \
+	gemu-6502/src/vga/display_sdl.c \
 	gemu-6502/src/audio/apu2a03.c \
 	gemu-6502/src/hardware/machine_generic.c \
 	gemu-6502/src/hardware/machine_nes.c \
 	gemu-6502/src/hardware/nes_devices.c \
 	gemu-6502/src/hardware/romdb.c
 
-MOS_OBJ := $(patsubst %.c, build/mos/%.o, $(MOS_CORE_SRC) $(MOS_SRC))
+ifdef GTK
+MOS_CFLAGS   += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
+MOS_LDFLAGS  += $(shell pkg-config --libs gtk+-3.0)
+MOS_SRC      += gemu-6502/src/vga/display_gtk.c core/src/gtk_menu.c
+MOS_BUILDDIR := build/mos-gtk
+else
+MOS_BUILDDIR := build/mos
+endif
 
-bin/gemu-6502: $(MOS_OBJ)
+MOS_OBJ := $(patsubst %.c, $(MOS_BUILDDIR)/%.o, $(MOS_CORE_SRC) $(MOS_SRC))
+
+bin/gemu-6502$(EXESUFFIX): $(MOS_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(MOS_LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -155,10 +189,11 @@ $(MOS_OBJ): $(CORE_HDRS) \
 	gemu-6502/src/hardware/nes_devices.h \
 	gemu-6502/src/hardware/romdb.h \
 	gemu-6502/src/vga/rp2c02.h \
-	gemu-6502/src/vga/nes_sdl.h \
-	gemu-6502/src/audio/apu2a03.h
+	gemu-6502/src/vga/nes_display.h \
+	gemu-6502/src/audio/apu2a03.h \
+	core/include/gemu/gtk_menu.h
 
-build/mos/%.o: %.c
+$(MOS_BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(MOS_CFLAGS) -c -o $@ $<
 

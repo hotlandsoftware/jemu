@@ -377,7 +377,9 @@ void rca_studio2_run(RcaStudio2State *s, const RcaConfig *cfg) {
         Uint32 t0 = SDL_GetTicks();
         bool reset = false;
 
+#ifndef GEMU_NO_CURSES
         if (is_curses) rca_display_curses_poll_studio2(display, s, &quit, &reset);
+#endif
         else           studio2_poll_display(s, display, &quit, &reset);
         studio2_poll_vnc(s);
         studio2_update_ef(s);

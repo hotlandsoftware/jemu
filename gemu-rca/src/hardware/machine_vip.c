@@ -508,8 +508,10 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         Uint32 t0 = SDL_GetTicks();
 
         /* ── Input ── */
+#ifndef GEMU_NO_CURSES
         if (cfg->display_type == GEMU_DISPLAY_CURSES)
             rca_display_curses_poll_vip(display, s, &quit);
+#endif
         else
             vip_poll_display(s, cfg, display, &quit);
         if (quit) break;

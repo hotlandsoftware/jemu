@@ -1,5 +1,5 @@
 #include "nes.h"
-#include "../vga/nes_sdl.h"
+#include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
 #include "gemu/memory.h"
 #include <SDL2/SDL.h>
@@ -12,6 +12,10 @@
 #else
 #  include <sys/stat.h>
 #  define gemu_mkdir(p) mkdir((p), 0755)
+#endif
+#ifdef GEMU_GTK
+#  include <gtk/gtk.h>
+#  include "gemu/gtk_menu.h"
 #endif
 
 /* ── Battery-backed SRAM persistence ────────────────────────────────────── */
@@ -52,6 +56,18 @@ static void nes_ensure_sav_dir(const char *sav_path) {
 }
 
 static bool nes_battery_prompt(void) {
+#ifdef GEMU_GTK
+    GtkWidget *dlg = gtk_message_dialog_new(
+        NULL, GTK_DIALOG_MODAL,
+        GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
+        "This game has a battery.\n"
+        "Do you want GEMU to save data automatically?");
+    gtk_window_set_title(GTK_WINDOW(dlg), "Battery-backed Save");
+    gint resp = gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+    while (gtk_events_pending()) gtk_main_iteration_do(FALSE);
+    return resp == GTK_RESPONSE_YES;
+#else
     SDL_MessageBoxButtonData buttons[] = {
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Yes" },
         { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "No"  },
@@ -69,6 +85,7 @@ static bool nes_battery_prompt(void) {
     int choice = 0;
     SDL_ShowMessageBox(&data, &choice);
     return choice == 1;
+#endif
 }
 
 static void nes_sav_load(NesState *s) {
@@ -510,12 +527,14 @@ NesState *nes_create(const MosConfig *cfg) {
         .status = nes_media_status,
     });
 
-    if (cfg->display_type == GEMU_DISPLAY_SDL) {
-        s->display = nes_display_create("GEMU",
+    if (cfg->display_type == GEMU_DISPLAY_SDL ||
+        cfg->display_type == GEMU_DISPLAY_GTK) {
+        s->display = nes_display_create(cfg->display_type, "GEMU",
                                         rp2c02_palette_rgb,
-                                        cfg->display_scale);
+                                        cfg->display_scale,
+                                        s->monitor);
         if (!s->display)
-            fprintf(stderr, "nes: failed to create SDL window\n");
+            fprintf(stderr, "nes: failed to create display window\n");
     }
 
     nes_battery_setup(s);

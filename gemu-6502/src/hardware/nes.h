@@ -2,7 +2,7 @@
 #include "mos6502cfg.h"
 #include "../cpu/mos6502.h"
 #include "../vga/rp2c02.h"
-#include "../vga/nes_sdl.h"
+#include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
 #include "gemu/vnc.h"
 #include "gemu/monitor.h"

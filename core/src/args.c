@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 /* ── Display backend table (fixed set, same for all binaries) ────────────── */
 
@@ -85,6 +86,33 @@ static bool dev_validate(const char *prog, const char *flag,
         if (strcmp(devs[i].name, val) == 0) return true;
     fprintf(stderr, "%s: unknown %s '%s' (try %s ?)\n", prog, flag, val, flag);
     return false;
+}
+
+/* ── Address:file argument helper ────────────────────────────────────────── */
+
+int gemu_parse_addr_arg(const char *prog, const char *arg,
+                        uint32_t *addr, const char **path) {
+    const char *colon = strchr(arg, ':');
+    if (!colon) {
+        *path = arg;
+        return 0;
+    }
+    if (colon == arg) {
+        fprintf(stderr, "%s: expected ADDR:FILE, got '%s'\n", prog, arg);
+        return -1;
+    }
+    char buf[32];
+    size_t len = (size_t)(colon - arg);
+    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+    memcpy(buf, arg, len);
+    buf[len] = '\0';
+    *addr = (uint32_t)strtoul(buf, NULL, 0);
+    *path = colon + 1;
+    if (!**path) {
+        fprintf(stderr, "%s: missing file path in '%s'\n", prog, arg);
+        return -1;
+    }
+    return 1;
 }
 
 /* ── Main parser ─────────────────────────────────────────────────────────── */
@@ -241,6 +269,10 @@ bool gemu_args_parse(int argc, char **argv,
             return false;
         }
     }
+
+    /* VNC without an explicit -display → headless */
+    if (out->vnc_addr && !out->display_explicit)
+        out->display_type = GEMU_DISPLAY_NONE;
 
     return true;
 }

@@ -2,17 +2,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <pthread.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+typedef SOCKET sock_t;
+#  define INVALID_SOCK   INVALID_SOCKET
+#  define sock_close(s)  closesocket(s)
+#  ifndef MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#  endif
+typedef int ssize_t;
+#else
+#  include <unistd.h>
+#  include <sys/select.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+typedef int sock_t;
+#  define INVALID_SOCK   (-1)
+#  define sock_close(s)  close(s)
+#endif
 
 #define GEMU_VNC_KEY_QUEUE_CAP 64u
 
 struct GemuVncServer {
-    int             listen_fd;
+    sock_t          listen_fd;
     pthread_t       thread;
     pthread_mutex_t lock;
     uint8_t        *fb;          /* vram snapshot (1 byte/pixel) */
@@ -83,14 +100,14 @@ static void release_held_keys(GemuVncServer *vnc) {
 
 /* ── I/O helpers ─────────────────────────────────────────────────────────── */
 
-static bool recvall(int fd, void *buf, size_t n) {
-    uint8_t *p = buf;
-    while (n) { ssize_t r = recv(fd, p, n, 0); if (r <= 0) return false; p += r; n -= (size_t)r; }
+static bool recvall(sock_t fd, void *buf, size_t n) {
+    char *p = buf;
+    while (n) { ssize_t r = recv(fd, p, (int)n, 0); if (r <= 0) return false; p += r; n -= (size_t)r; }
     return true;
 }
-static bool sendall(int fd, const void *buf, size_t n) {
-    const uint8_t *p = buf;
-    while (n) { ssize_t r = send(fd, p, n, MSG_NOSIGNAL); if (r <= 0) return false; p += r; n -= (size_t)r; }
+static bool sendall(sock_t fd, const void *buf, size_t n) {
+    const char *p = buf;
+    while (n) { ssize_t r = send(fd, p, (int)n, MSG_NOSIGNAL); if (r <= 0) return false; p += r; n -= (size_t)r; }
     return true;
 }
 
@@ -138,7 +155,7 @@ static void write_pixel(uint8_t *dst, uint32_t val, int bpp, bool be) {
 
 /* ── RFB handshake ───────────────────────────────────────────────────────── */
 
-static bool vnc_handshake(int fd) {
+static bool vnc_handshake(sock_t fd) {
     if (!sendall(fd, "RFB 003.008\n", 12)) return false;
     char ver[13]; ver[12] = '\0';
     if (!recvall(fd, ver, 12)) return false;
@@ -156,7 +173,7 @@ static bool vnc_handshake(int fd) {
     uint8_t shared; return recvall(fd, &shared, 1);
 }
 
-static bool vnc_send_server_init(GemuVncServer *vnc, int fd) {
+static bool vnc_send_server_init(GemuVncServer *vnc, sock_t fd) {
     uint8_t msg[24];
     uint16_t w = htons((uint16_t)vnc->fb_w), h = htons((uint16_t)vnc->fb_h);
     memcpy(msg, &w, 2); memcpy(msg+2, &h, 2);
@@ -170,7 +187,7 @@ static bool vnc_send_server_init(GemuVncServer *vnc, int fd) {
 
 /* ── FramebufferUpdate ───────────────────────────────────────────────────── */
 
-static bool vnc_send_update(GemuVncServer *vnc, int fd, const PixFmt *fmt) {
+static bool vnc_send_update(GemuVncServer *vnc, sock_t fd, const PixFmt *fmt) {
     int npix = vnc->fb_w * vnc->fb_h;
 
     pthread_mutex_lock(&vnc->lock);
@@ -223,7 +240,7 @@ static bool vnc_send_update(GemuVncServer *vnc, int fd, const PixFmt *fmt) {
 
 /* ── Client message loop ─────────────────────────────────────────────────── */
 
-static void vnc_handle_client(GemuVncServer *vnc, int fd) {
+static void vnc_handle_client(GemuVncServer *vnc, sock_t fd) {
     if (!vnc_handshake(fd) || !vnc_send_server_init(vnc, fd)) return;
     PixFmt fmt = default_fmt();
     while (vnc->running) {
@@ -285,14 +302,14 @@ static void *vnc_thread(void *arg) {
     while (vnc->running) {
         fd_set fds; FD_ZERO(&fds); FD_SET(vnc->listen_fd, &fds);
         struct timeval tv = {1, 0};
-        if (select(vnc->listen_fd + 1, &fds, NULL, NULL, &tv) <= 0) continue;
-        int cfd = accept(vnc->listen_fd, NULL, NULL);
-        if (cfd < 0) continue;
+        if (select((int)(vnc->listen_fd) + 1, &fds, NULL, NULL, &tv) <= 0) continue;
+        sock_t cfd = accept(vnc->listen_fd, NULL, NULL);
+        if (cfd == INVALID_SOCK) continue;
         printf("vnc: client connected\n");
         vnc_handle_client(vnc, cfd);
         release_held_keys(vnc);
         printf("vnc: client disconnected\n");
-        close(cfd);
+        sock_close(cfd);
     }
     return NULL;
 }
@@ -317,14 +334,18 @@ GemuVncServer *gemu_vnc_create(const char *addr, int fb_w, int fb_h) {
     if (!parse_vnc_addr(addr, host, &port)) {
         fprintf(stderr, "vnc: bad address '%s' — use host:N or :N\n", addr); return NULL;
     }
-    int lfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (lfd < 0) { perror("vnc: socket"); return NULL; }
-    int opt = 1; setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef _WIN32
+    { WSADATA d; WSAStartup(MAKEWORD(2, 2), &d); }
+#endif
+    sock_t lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == INVALID_SOCK) { perror("vnc: socket"); return NULL; }
+    int opt = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, (int)sizeof(opt));
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET; sa.sin_port = htons((uint16_t)port);
     inet_pton(AF_INET, host, &sa.sin_addr);
     if (bind(lfd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-        perror("vnc: bind"); close(lfd); return NULL;
+        perror("vnc: bind"); sock_close(lfd); return NULL;
     }
     listen(lfd, 1);
     GemuVncServer *vnc = calloc(1, sizeof(*vnc));
@@ -369,10 +390,13 @@ void gemu_vnc_destroy(GemuVncServer *vnc) {
     if (!vnc) return;
     vnc->running = false;
     pthread_join(vnc->thread, NULL);
-    close(vnc->listen_fd);
+    sock_close(vnc->listen_fd);
     pthread_mutex_destroy(&vnc->lock);
     free(vnc->fb);
     free(vnc);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 void gemu_vnc_get_keys(GemuVncServer *vnc, uint8_t keys[16]) {

@@ -20,7 +20,9 @@ static const GemuArgsDef def = {
     .cpus       = cpus,      .n_cpus     = 1,
     .vgas       = NULL,      .n_vgas     = 0,
     .display_mask = GEMU_DISP_F(GEMU_DISPLAY_SDL)
+#ifndef GEMU_NO_CURSES
                   | GEMU_DISP_F(GEMU_DISPLAY_CURSES)
+#endif
                   | GEMU_DISP_F(GEMU_DISPLAY_NONE)
 #ifdef GEMU_GTK
                   | GEMU_DISP_F(GEMU_DISPLAY_GTK)
@@ -95,26 +97,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* VNC with no explicit -display → headless */
-    if (cfg.vnc_addr && !args.display_explicit)
-        cfg.display_type = GEMU_DISPLAY_NONE;
-
-    if (cfg.display_type == GEMU_DISPLAY_SDL) {
-        if (SDL_Init(0) < 0) {
-            fprintf(stderr, "gemu-chip8: SDL_Init failed: %s\n", SDL_GetError());
-            return 1;
-        }
+    bool sdl_up = (cfg.display_type == GEMU_DISPLAY_SDL);
+    if (sdl_up && SDL_Init(0) < 0) {
+        fprintf(stderr, "gemu-chip8: SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
     }
 
     Chip8State *s = chip8_machine_create(&cfg);
-    if (!s) {
-        if (cfg.display_type == GEMU_DISPLAY_SDL) SDL_Quit();
-        return 1;
-    }
+    if (!s) { if (sdl_up) SDL_Quit(); return 1; }
 
     chip8_machine_run(s, &cfg);
     chip8_machine_destroy(s);
 
-    if (cfg.display_type == GEMU_DISPLAY_SDL) SDL_Quit();
+    if (sdl_up) SDL_Quit();
     return 0;
 }
