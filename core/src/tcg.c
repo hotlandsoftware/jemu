@@ -1,23 +1,23 @@
-#include "jemu/tcg.h"
+#include "gemu/tcg.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
 static uint32_t tb_hash(uint32_t pc) {
     /* Knuth multiplicative hash, shift down to index width */
-    return (pc * 2654435761u) >> (32 - JEMU_TB_HASH_BITS);
+    return (pc * 2654435761u) >> (32 - GEMU_TB_HASH_BITS);
 }
 
-void jemu_tb_cache_init(JemuTbCache *cache, void (*free_insns)(void *)) {
+void gemu_tb_cache_init(GemuTbCache *cache, void (*free_insns)(void *)) {
     memset(cache, 0, sizeof(*cache));
     cache->free_insns = free_insns;
 }
 
-void jemu_tb_cache_flush(JemuTbCache *cache) {
-    for (uint32_t i = 0; i < JEMU_TB_HASH_SIZE; i++) {
-        JemuTb *tb = cache->buckets[i];
+void gemu_tb_cache_flush(GemuTbCache *cache) {
+    for (uint32_t i = 0; i < GEMU_TB_HASH_SIZE; i++) {
+        GemuTb *tb = cache->buckets[i];
         while (tb) {
-            JemuTb *next = tb->hash_next;
+            GemuTb *next = tb->hash_next;
             if (cache->free_insns && tb->insns)
                 cache->free_insns(tb->insns);
             free(tb);
@@ -29,8 +29,8 @@ void jemu_tb_cache_flush(JemuTbCache *cache) {
     cache->n_insns_total = 0;
 }
 
-JemuTb *jemu_tb_lookup(const JemuTbCache *cache, uint32_t pc) {
-    JemuTb *tb = cache->buckets[tb_hash(pc)];
+GemuTb *gemu_tb_lookup(const GemuTbCache *cache, uint32_t pc) {
+    GemuTb *tb = cache->buckets[tb_hash(pc)];
     while (tb) {
         if (tb->guest_pc == pc) return tb;
         tb = tb->hash_next;
@@ -38,9 +38,9 @@ JemuTb *jemu_tb_lookup(const JemuTbCache *cache, uint32_t pc) {
     return NULL;
 }
 
-JemuTb *jemu_tb_insert(JemuTbCache *cache, uint32_t pc,
+GemuTb *gemu_tb_insert(GemuTbCache *cache, uint32_t pc,
                        uint32_t guest_size, uint32_t n_insns, void *insns) {
-    JemuTb *tb = malloc(sizeof(*tb));
+    GemuTb *tb = malloc(sizeof(*tb));
     if (!tb) return NULL;
 
     tb->guest_pc   = pc;
@@ -58,10 +58,10 @@ JemuTb *jemu_tb_insert(JemuTbCache *cache, uint32_t pc,
     return tb;
 }
 
-void jemu_tb_invalidate_range(JemuTbCache *cache, uint32_t pc, uint32_t size) {
-    for (uint32_t i = 0; i < JEMU_TB_HASH_SIZE; i++) {
-        JemuTb **prev = &cache->buckets[i];
-        JemuTb  *tb   = *prev;
+void gemu_tb_invalidate_range(GemuTbCache *cache, uint32_t pc, uint32_t size) {
+    for (uint32_t i = 0; i < GEMU_TB_HASH_SIZE; i++) {
+        GemuTb **prev = &cache->buckets[i];
+        GemuTb  *tb   = *prev;
         while (tb) {
             uint32_t tb_end  = tb->guest_pc + tb->guest_size;
             uint32_t inv_end = pc + size;

@@ -1,0 +1,65 @@
+#pragma once
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * GEMU monitor — QEMU-style interactive console on stdin.
+ *
+ * A background thread reads lines from stdin and enqueues commands.
+ * The emulator's run loop drains the queue each frame via gemu_monitor_poll().
+ * Only active when stdin is a TTY; silently inert when piped or redirected.
+ */
+
+typedef enum {
+    GEMU_MON_NONE = 0,
+    GEMU_MON_RESET,
+    GEMU_MON_QUIT,
+    GEMU_MON_STOP,  /* halt emulation  */
+    GEMU_MON_CONT,  /* resume          */
+    GEMU_MON_STEP,  /* one instruction */
+    GEMU_MON_CUSTOM,/* machine-specific command */
+} GemuMonCmd;
+
+typedef struct GemuMonitor GemuMonitor;
+
+typedef enum {
+    GEMU_MEDIA_OK = 0,
+    GEMU_MEDIA_OK_RESET,
+    GEMU_MEDIA_ERR,
+} GemuMediaResult;
+
+typedef struct GemuMediaDevice {
+    const char *name;
+    const char *kind;
+    void       *ud;
+
+    GemuMediaResult (*change)(void *ud, const char *arg,
+                              char *err, size_t err_len);
+    GemuMediaResult (*eject)(void *ud, char *err, size_t err_len);
+    void (*status)(void *ud, char *buf, size_t buf_len);
+} GemuMediaDevice;
+
+GemuMonitor *gemu_monitor_create(void);
+void         gemu_monitor_destroy(GemuMonitor *mon);
+
+/* Enqueue a reset or quit command from non-stdin sources (e.g. a GTK menu). */
+void         gemu_monitor_enqueue_reset(GemuMonitor *mon);
+void         gemu_monitor_enqueue_quit(GemuMonitor *mon);
+
+bool         gemu_monitor_register_media(GemuMonitor *mon,
+                                         const GemuMediaDevice *dev);
+
+/* Start the stdin reader thread (no-op if not a TTY). */
+void         gemu_monitor_start(GemuMonitor *mon);
+/* Signal and join the reader thread. */
+void         gemu_monitor_stop(GemuMonitor *mon);
+
+/* Dequeue one command (NONE if empty). Also updates the paused flag
+ * for STOP/CONT/STEP commands so callers don't have to. */
+GemuMonCmd   gemu_monitor_poll(GemuMonitor *mon);
+uint32_t     gemu_monitor_step_count(const GemuMonitor *mon);
+const char  *gemu_monitor_command_text(const GemuMonitor *mon);
+void         gemu_monitor_unknown_command(const GemuMonitor *mon);
+
+bool         gemu_monitor_is_paused(const GemuMonitor *mon);

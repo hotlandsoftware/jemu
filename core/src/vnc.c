@@ -1,4 +1,4 @@
-#include "jemu/vnc.h"
+#include "gemu/vnc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +9,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define JEMU_VNC_KEY_QUEUE_CAP 64u
+#define GEMU_VNC_KEY_QUEUE_CAP 64u
 
-struct JemuVncServer {
+struct GemuVncServer {
     int             listen_fd;
     pthread_t       thread;
     pthread_mutex_t lock;
@@ -21,9 +21,9 @@ struct JemuVncServer {
     bool            running;
     uint8_t         keys[16];    /* CHIP-8 key state from VNC clients */
     uint32_t        queued_keysym;
-    JemuVncKeyEvent key_queue[JEMU_VNC_KEY_QUEUE_CAP];
+    GemuVncKeyEvent key_queue[GEMU_VNC_KEY_QUEUE_CAP];
     unsigned        key_head, key_count;
-    uint32_t        held_keysyms[JEMU_VNC_KEY_QUEUE_CAP];
+    uint32_t        held_keysyms[GEMU_VNC_KEY_QUEUE_CAP];
     unsigned        held_count;
     uint32_t        fg_rgb;
     uint32_t        bg_rgb;
@@ -43,21 +43,21 @@ static const uint32_t chip8_keysyms[16] = {
     0x34, /* C → 4 */  0x72, /* D → r */  0x66, /* E → f */  0x76, /* F → v */
 };
 
-static void enqueue_key_event(JemuVncServer *vnc, uint32_t keysym, bool down) {
-    if (vnc->key_count == JEMU_VNC_KEY_QUEUE_CAP) {
-        vnc->key_head = (vnc->key_head + 1u) % JEMU_VNC_KEY_QUEUE_CAP;
+static void enqueue_key_event(GemuVncServer *vnc, uint32_t keysym, bool down) {
+    if (vnc->key_count == GEMU_VNC_KEY_QUEUE_CAP) {
+        vnc->key_head = (vnc->key_head + 1u) % GEMU_VNC_KEY_QUEUE_CAP;
         vnc->key_count--;
     }
 
-    unsigned idx = (vnc->key_head + vnc->key_count) % JEMU_VNC_KEY_QUEUE_CAP;
-    vnc->key_queue[idx] = (JemuVncKeyEvent){
+    unsigned idx = (vnc->key_head + vnc->key_count) % GEMU_VNC_KEY_QUEUE_CAP;
+    vnc->key_queue[idx] = (GemuVncKeyEvent){
         .keysym = keysym,
         .down = down,
     };
     vnc->key_count++;
 }
 
-static void update_held_key(JemuVncServer *vnc, uint32_t keysym, bool down) {
+static void update_held_key(GemuVncServer *vnc, uint32_t keysym, bool down) {
     for (unsigned i = 0; i < vnc->held_count; i++) {
         if (vnc->held_keysyms[i] != keysym)
             continue;
@@ -68,11 +68,11 @@ static void update_held_key(JemuVncServer *vnc, uint32_t keysym, bool down) {
         return;
     }
 
-    if (down && vnc->held_count < JEMU_VNC_KEY_QUEUE_CAP)
+    if (down && vnc->held_count < GEMU_VNC_KEY_QUEUE_CAP)
         vnc->held_keysyms[vnc->held_count++] = keysym;
 }
 
-static void release_held_keys(JemuVncServer *vnc) {
+static void release_held_keys(GemuVncServer *vnc) {
     pthread_mutex_lock(&vnc->lock);
     for (unsigned i = 0; i < vnc->held_count; i++)
         enqueue_key_event(vnc, vnc->held_keysyms[i], false);
@@ -156,7 +156,7 @@ static bool vnc_handshake(int fd) {
     uint8_t shared; return recvall(fd, &shared, 1);
 }
 
-static bool vnc_send_server_init(JemuVncServer *vnc, int fd) {
+static bool vnc_send_server_init(GemuVncServer *vnc, int fd) {
     uint8_t msg[24];
     uint16_t w = htons((uint16_t)vnc->fb_w), h = htons((uint16_t)vnc->fb_h);
     memcpy(msg, &w, 2); memcpy(msg+2, &h, 2);
@@ -165,12 +165,12 @@ static bool vnc_send_server_init(JemuVncServer *vnc, int fd) {
     memcpy(msg+8, &mx, 2); memcpy(msg+10, &mx, 2); memcpy(msg+12, &mx, 2);
     msg[14]=16; msg[15]=8; msg[16]=0; msg[17]=msg[18]=msg[19]=0;
     uint32_t nl = htonl(4); memcpy(msg+20, &nl, 4);
-    return sendall(fd, msg, 24) && sendall(fd, "JEMU", 4);
+    return sendall(fd, msg, 24) && sendall(fd, "GEMU", 4);
 }
 
 /* ── FramebufferUpdate ───────────────────────────────────────────────────── */
 
-static bool vnc_send_update(JemuVncServer *vnc, int fd, const PixFmt *fmt) {
+static bool vnc_send_update(GemuVncServer *vnc, int fd, const PixFmt *fmt) {
     int npix = vnc->fb_w * vnc->fb_h;
 
     pthread_mutex_lock(&vnc->lock);
@@ -223,7 +223,7 @@ static bool vnc_send_update(JemuVncServer *vnc, int fd, const PixFmt *fmt) {
 
 /* ── Client message loop ─────────────────────────────────────────────────── */
 
-static void vnc_handle_client(JemuVncServer *vnc, int fd) {
+static void vnc_handle_client(GemuVncServer *vnc, int fd) {
     if (!vnc_handshake(fd) || !vnc_send_server_init(vnc, fd)) return;
     PixFmt fmt = default_fmt();
     while (vnc->running) {
@@ -281,7 +281,7 @@ static void vnc_handle_client(JemuVncServer *vnc, int fd) {
 }
 
 static void *vnc_thread(void *arg) {
-    JemuVncServer *vnc = arg;
+    GemuVncServer *vnc = arg;
     while (vnc->running) {
         fd_set fds; FD_ZERO(&fds); FD_SET(vnc->listen_fd, &fds);
         struct timeval tv = {1, 0};
@@ -312,7 +312,7 @@ static bool parse_vnc_addr(const char *s, char host[64], int *port) {
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h) {
+GemuVncServer *gemu_vnc_create(const char *addr, int fb_w, int fb_h) {
     char host[64]; int port;
     if (!parse_vnc_addr(addr, host, &port)) {
         fprintf(stderr, "vnc: bad address '%s' — use host:N or :N\n", addr); return NULL;
@@ -327,7 +327,7 @@ JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h) {
         perror("vnc: bind"); close(lfd); return NULL;
     }
     listen(lfd, 1);
-    JemuVncServer *vnc = calloc(1, sizeof(*vnc));
+    GemuVncServer *vnc = calloc(1, sizeof(*vnc));
     vnc->listen_fd = lfd;
     vnc->fb_w = fb_w; vnc->fb_h = fb_h;
     vnc->fg_rgb = 0xFFFFFFu;
@@ -339,7 +339,7 @@ JemuVncServer *jemu_vnc_create(const char *addr, int fb_w, int fb_h) {
     return vnc;
 }
 
-void jemu_vnc_set_colors(JemuVncServer *vnc, uint32_t fg_rgb, uint32_t bg_rgb) {
+void gemu_vnc_set_colors(GemuVncServer *vnc, uint32_t fg_rgb, uint32_t bg_rgb) {
     if (!vnc) return;
     pthread_mutex_lock(&vnc->lock);
     vnc->fg_rgb = fg_rgb & 0xFFFFFFu;
@@ -348,7 +348,7 @@ void jemu_vnc_set_colors(JemuVncServer *vnc, uint32_t fg_rgb, uint32_t bg_rgb) {
     pthread_mutex_unlock(&vnc->lock);
 }
 
-void jemu_vnc_set_palette(JemuVncServer *vnc,
+void gemu_vnc_set_palette(GemuVncServer *vnc,
                           const uint32_t *palette, int n_colors) {
     if (!vnc) return;
     if (!palette || n_colors <= 0) {
@@ -365,7 +365,7 @@ void jemu_vnc_set_palette(JemuVncServer *vnc,
     pthread_mutex_unlock(&vnc->lock);
 }
 
-void jemu_vnc_destroy(JemuVncServer *vnc) {
+void gemu_vnc_destroy(GemuVncServer *vnc) {
     if (!vnc) return;
     vnc->running = false;
     pthread_join(vnc->thread, NULL);
@@ -375,14 +375,14 @@ void jemu_vnc_destroy(JemuVncServer *vnc) {
     free(vnc);
 }
 
-void jemu_vnc_get_keys(JemuVncServer *vnc, uint8_t keys[16]) {
+void gemu_vnc_get_keys(GemuVncServer *vnc, uint8_t keys[16]) {
     if (!vnc) { memset(keys, 0, 16); return; }
     pthread_mutex_lock(&vnc->lock);
     memcpy(keys, vnc->keys, 16);
     pthread_mutex_unlock(&vnc->lock);
 }
 
-uint32_t jemu_vnc_pop_keysym(JemuVncServer *vnc) {
+uint32_t gemu_vnc_pop_keysym(GemuVncServer *vnc) {
     if (!vnc) return 0;
     pthread_mutex_lock(&vnc->lock);
     uint32_t sym = vnc->queued_keysym;
@@ -391,7 +391,7 @@ uint32_t jemu_vnc_pop_keysym(JemuVncServer *vnc) {
     return sym;
 }
 
-bool jemu_vnc_pop_key_event(JemuVncServer *vnc, JemuVncKeyEvent *event) {
+bool gemu_vnc_pop_key_event(GemuVncServer *vnc, GemuVncKeyEvent *event) {
     if (!vnc || !event) return false;
     pthread_mutex_lock(&vnc->lock);
     if (vnc->key_count == 0) {
@@ -399,13 +399,13 @@ bool jemu_vnc_pop_key_event(JemuVncServer *vnc, JemuVncKeyEvent *event) {
         return false;
     }
     *event = vnc->key_queue[vnc->key_head];
-    vnc->key_head = (vnc->key_head + 1u) % JEMU_VNC_KEY_QUEUE_CAP;
+    vnc->key_head = (vnc->key_head + 1u) % GEMU_VNC_KEY_QUEUE_CAP;
     vnc->key_count--;
     pthread_mutex_unlock(&vnc->lock);
     return true;
 }
 
-void jemu_vnc_update(JemuVncServer *vnc,
+void gemu_vnc_update(GemuVncServer *vnc,
                      const uint8_t *vram, int vw, int vh) {
     if (!vnc) return;
     pthread_mutex_lock(&vnc->lock);

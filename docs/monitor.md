@@ -1,4 +1,4 @@
-The JEMU monitor is made to give commands to the JEMU emulator. It is designed to be as backwards compatible as possible with the QEMU emulator, with a couple of additional commands per emulator.
+The GEMU monitor is made to give commands to the GEMU emulator. It is designed to be as backwards compatible as possible with the QEMU emulator, with a couple of additional commands per emulator.
 
 # Commands
 The following commands are available:

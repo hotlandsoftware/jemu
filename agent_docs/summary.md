@@ -1,4 +1,4 @@
-# jemu — Jaguar Emulator
+# gemu — Jaguar Emulator
 
 General-purpose machine emulator written in C. Modeled after QEMU in architecture,
 targeting speed over strict accuracy (balanced). Not associated with the Atari Jaguar.
@@ -8,10 +8,10 @@ targeting speed over strict accuracy (balanced). Not associated with the Atari J
 ## Architecture
 
 ```
-jemu/
+gemu/
 ├── core/               # Platform-agnostic emulator infrastructure
-│   ├── include/jemu/
-│   │   ├── jemu.h      # Version, common macros
+│   ├── include/gemu/
+│   │   ├── gemu.h      # Version, common macros
 │   │   ├── memory.h    # Memory bus abstraction
 │   │   ├── cpu.h       # Abstract CPU interface
 │   │   ├── device.h    # Device I/O interface
@@ -19,7 +19,7 @@ jemu/
 │   └── src/
 │       ├── memory.c
 │       └── tcg.c
-└── jemu-chip8/         # CHIP-8 platform (first target)
+└── gemu-chip8/         # CHIP-8 platform (first target)
     ├── include/chip8.h
     └── src/
         ├── main.c      # CLI entry + arg parsing
@@ -49,13 +49,13 @@ by KVM for hardware-accelerated execution.
 | core/memory      | Flat and banked memory, ROM/RAM regions             |
 | core/cpu         | Abstract CPU vtable (reset, step, destroy)          |
 | core/device      | Device I/O vtable (read, write, update)             |
-| jemu-\<platform\> | Platform-specific decoder, machine init, run loop   |
+| gemu-\<platform\> | Platform-specific decoder, machine init, run loop   |
 
 ---
 
 ## Platforms
 
-### jemu-chip8 (current)
+### gemu-chip8 (current)
 CHIP-8 interpreter + translation block cache.
 
 **Specs:**
@@ -70,7 +70,7 @@ CHIP-8 interpreter + translation block cache.
 
 **Usage:**
 ```
-jemu-chip8 [options] <rom.ch8>
+gemu-chip8 [options] <rom.ch8>
 
 Options:
   -m SIZE     Memory size (default: 4K)
@@ -82,7 +82,7 @@ Options:
 
 **Example:**
 ```
-jemu-chip8 -m 4K -cpu chip8 -vga std roms/pong.ch8
+gemu-chip8 -m 4K -cpu chip8 -vga std roms/pong.ch8
 ```
 
 ---
@@ -91,8 +91,8 @@ jemu-chip8 -m 4K -cpu chip8 -vga std roms/pong.ch8
 
 | Binary        | Target                     |
 |---------------|----------------------------|
-| jemu-x86      | x86/x86-64 PC (i440FX)     |
-| jemu-arm      | ARMv7/AArch64              |
+| gemu-x86      | x86/x86-64 PC (i440FX)     |
+| gemu-arm      | ARMv7/AArch64              |
 
 ## Future Features (not yet implemented)
 - KVM acceleration backend

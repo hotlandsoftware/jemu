@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JEMU | Nintendo Entertainment System (NTSC)</title>
+    <title>GEMU | Nintendo Entertainment System (NTSC)</title>
     <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -74,11 +74,11 @@
 <body>
 
 <nav>
-    <a class="logo" href="../index.html">JEMU</a>
+    <a class="logo" href="../index.html">GEMU</a>
     <a href="../index.html">Machines</a>
-    <a href="https://github.com/hotlandsoftware/jemu/blob/main/MACHINES.md">Docs</a>
+    <a href="https://github.com/hotlandsoftware/gemu/blob/main/MACHINES.md">Docs</a>
     <span class="spacer"></span>
-    <a class="gh-link" href="https://github.com/hotlandsoftware/jemu">GitHub ↗</a>
+    <a class="gh-link" href="https://github.com/hotlandsoftware/gemu">GitHub ↗</a>
 </nav>
 
 <div class="breadcrumb">
@@ -93,7 +93,7 @@
     <div class="container">
         <h1>Nintendo Entertainment System (NTSC)</h1>
         <div class="subtitle">
-            <strong>RCA</strong> &nbsp;·&nbsp; 1977 &nbsp;·&nbsp; NTSC
+            <strong>Nintendo</strong> &nbsp;·&nbsp; 1985 &nbsp;·&nbsp; NTSC
         </div>
     </div>
 </div>
@@ -103,10 +103,10 @@
         <aside>
             <div class="info-panel">
                 <div class="info-header">Details</div>
-                <table><tr><td>Manufacturer</td><td>RCA</td></tr>
+                <table><tr><td>Manufacturer</td><td>Nintendo</td></tr>
 <tr><td>Year</td><td>1985</td></tr>
 <tr><td>CPU</td><td>Ricoh 2A03</td></tr>
-<tr><td>Core</td><td>jemu-6502</td></tr>
+<tr><td>Core</td><td>gemu-6502</td></tr>
 <tr><td>TV System</td><td>NTSC</td></tr>
 <tr><td>Screen</td><td>256 × 240</td></tr>
 <tr><td>Input</td><td>Standard Controller</td></tr>
@@ -122,15 +122,15 @@
                 <br><br>
                 A few notes about the current NES emulation state:
                 <ul>
-                    <li>Only Mapper 0 games (Dig Dug, Super Mario Bros.) are working right now.</li>
-                    <li>Some mild graphical glitches are present, but nothing outright unplayable.</li>
+                    <li>Mapper 0, 1, and 2 games work.</li>
+                    <li>The emulator has mild graphical glitches but nothing is outright unplayable.</li>
                     <li>Only Standard Controller is supported in input as of now.</li>
                     <li>The AccuracyCoin Test scores a 17 / 140 - more than MarioNES (3), Nesticle (5), Famtasia (9), and JNes (14), but far less than iNES (67), Nezulator (71), No$NES (73), FCEUX (83), Nestopia (93), and NES Classic Edition (94).</li>
                 </ul>
             </p>
 
             <div class="section-title">Run</div>
-            <div class="run-block">./bin/jemu-6502 -M nes -cartridge /path/to/cartridge.nes</div>
+            <div class="run-block">./bin/gemu-6502 -M nes -cartridge /path/to/cartridge.nes</div>
             <div class="section-title">Controls</div>
             <table class="ctrls">
                 <thead><tr><th>Key #</th><th>Player A</th></tr></thead>
@@ -147,8 +147,8 @@
 
 <footer>
     <div class="container">
-        JEMU is unstable and not suitable for production use. &nbsp;·&nbsp;
-        <a href="https://github.com/hotlandsoftware/jemu">Source on GitHub</a>
+        GEMU is unstable and not suitable for production use. &nbsp;·&nbsp;
+        <a href="https://github.com/hotlandsoftware/gemu">Source on GitHub</a>
     </div>
 </footer>
 

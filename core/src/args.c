@@ -1,25 +1,25 @@
-#include "jemu/args.h"
-#include "jemu/jemu.h"
+#include "gemu/args.h"
+#include "gemu/gemu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* ── Display backend table (fixed set, same for all binaries) ────────────── */
 
-typedef struct { JemuDisplayType type; const char *name; const char *desc; } DispEntry;
+typedef struct { GemuDisplayType type; const char *name; const char *desc; } DispEntry;
 
 static const DispEntry display_table[] = {
-    { JEMU_DISPLAY_SDL,    "sdl",    "SDL2 windowed display (hardware-accelerated)" },
-    { JEMU_DISPLAY_GTK,    "gtk",    "GTK3 windowed display with menu bar" },
-    { JEMU_DISPLAY_CURSES, "curses", "ncurses terminal (half-block Unicode characters)" },
-    { JEMU_DISPLAY_NONE,   "none",   "Headless — no display output (pair with -vnc)" },
+    { GEMU_DISPLAY_SDL,    "sdl",    "SDL2 windowed display (hardware-accelerated)" },
+    { GEMU_DISPLAY_GTK,    "gtk",    "GTK3 windowed display with menu bar" },
+    { GEMU_DISPLAY_CURSES, "curses", "ncurses terminal (half-block Unicode characters)" },
+    { GEMU_DISPLAY_NONE,   "none",   "Headless — no display output (pair with -vnc)" },
 };
 #define N_DISPLAYS (int)(sizeof(display_table) / sizeof(display_table[0]))
 
 /* ── Help / listing helpers ──────────────────────────────────────────────── */
 
-static void print_usage(const JemuArgsDef *def) {
-    printf("jemu — Jaguar Emulator v" JEMU_VERSION_STR "\n"
+static void print_usage(const GemuArgsDef *def) {
+    printf("gemu — Jaguar Emulator v" GEMU_VERSION_STR "\n"
            "Usage: %s [options] <rom>\n\n"
            "Options:\n", def->prog);
     if (def->n_machines > 0)
@@ -37,7 +37,7 @@ static void print_usage(const JemuArgsDef *def) {
         printf("%s", def->extra_help);
 }
 
-static void list_devices(const char *kind, const JemuDevDesc *devs, int n) {
+static void list_devices(const char *kind, const GemuDevDesc *devs, int n) {
     printf("Available %s:\n", kind);
     int maxw = 0;
     for (int i = 0; i < n; i++) {
@@ -53,7 +53,7 @@ static void list_displays(unsigned mask) {
     DispEntry tmp[N_DISPLAYS];
     int n = 0;
     for (int i = 0; i < N_DISPLAYS; i++)
-        if (mask & JEMU_DISP_F(display_table[i].type))
+        if (mask & GEMU_DISP_F(display_table[i].type))
             tmp[n++] = display_table[i];
 
     printf("Available display backends:\n");
@@ -80,7 +80,7 @@ static bool is_help(const char *s) {
 }
 
 static bool dev_validate(const char *prog, const char *flag,
-                          const JemuDevDesc *devs, int n, const char *val) {
+                          const GemuDevDesc *devs, int n, const char *val) {
     for (int i = 0; i < n; i++)
         if (strcmp(devs[i].name, val) == 0) return true;
     fprintf(stderr, "%s: unknown %s '%s' (try %s ?)\n", prog, flag, val, flag);
@@ -89,8 +89,8 @@ static bool dev_validate(const char *prog, const char *flag,
 
 /* ── Main parser ─────────────────────────────────────────────────────────── */
 
-bool jemu_args_parse(int argc, char **argv,
-                     const JemuArgsDef *def, JemuArgs *out,
+bool gemu_args_parse(int argc, char **argv,
+                     const GemuArgsDef *def, GemuArgs *out,
                      int *rem_argc, char **rem_argv) {
     if (rem_argc) *rem_argc = 0;
 
@@ -177,7 +177,7 @@ bool jemu_args_parse(int argc, char **argv,
             bool found = false;
             for (int d = 0; d < N_DISPLAYS; d++) {
                 if (strcmp(display_table[d].name, v) == 0) {
-                    if (!(def->display_mask & JEMU_DISP_F(display_table[d].type))) {
+                    if (!(def->display_mask & GEMU_DISP_F(display_table[d].type))) {
                         fprintf(stderr, "%s: display '%s' not supported "
                                 "(try -display ?)\n", def->prog, v);
                         return false;

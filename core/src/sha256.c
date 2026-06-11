@@ -1,4 +1,4 @@
-#include "jemu/sha256.h"
+#include "gemu/sha256.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -47,7 +47,7 @@ static void sha256_transform(uint32_t s[8], const uint8_t b[64]) {
     s[4]+=e; s[5]+=f;  s[6]+=g; s[7]+=h;
 }
 
-void jemu_sha256_init(JemuSha256Ctx *ctx) {
+void gemu_sha256_init(GemuSha256Ctx *ctx) {
     ctx->state[0]=0x6a09e667; ctx->state[1]=0xbb67ae85;
     ctx->state[2]=0x3c6ef372; ctx->state[3]=0xa54ff53a;
     ctx->state[4]=0x510e527f; ctx->state[5]=0x9b05688c;
@@ -56,7 +56,7 @@ void jemu_sha256_init(JemuSha256Ctx *ctx) {
     memset(ctx->buf, 0, 64);
 }
 
-void jemu_sha256_update(JemuSha256Ctx *ctx, const uint8_t *data, size_t len) {
+void gemu_sha256_update(GemuSha256Ctx *ctx, const uint8_t *data, size_t len) {
     size_t used = (size_t)(ctx->count & 63);
     ctx->count += (uint64_t)len;
     if (used) {
@@ -73,7 +73,7 @@ void jemu_sha256_update(JemuSha256Ctx *ctx, const uint8_t *data, size_t len) {
     memcpy(ctx->buf, data, len);
 }
 
-void jemu_sha256_final(JemuSha256Ctx *ctx, uint8_t digest[JEMU_SHA256_DIGEST_LEN]) {
+void gemu_sha256_final(GemuSha256Ctx *ctx, uint8_t digest[GEMU_SHA256_DIGEST_LEN]) {
     size_t used = (size_t)(ctx->count & 63);
     ctx->buf[used++] = 0x80;
     if (used > 56) {
@@ -96,24 +96,24 @@ void jemu_sha256_final(JemuSha256Ctx *ctx, uint8_t digest[JEMU_SHA256_DIGEST_LEN
     }
 }
 
-bool jemu_sha256_file(const char *path, uint8_t digest[JEMU_SHA256_DIGEST_LEN]) {
+bool gemu_sha256_file(const char *path, uint8_t digest[GEMU_SHA256_DIGEST_LEN]) {
     FILE *f = fopen(path, "rb");
     if (!f) return false;
-    JemuSha256Ctx ctx;
-    jemu_sha256_init(&ctx);
+    GemuSha256Ctx ctx;
+    gemu_sha256_init(&ctx);
     uint8_t buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
-        jemu_sha256_update(&ctx, buf, n);
+        gemu_sha256_update(&ctx, buf, n);
     bool ok = !ferror(f);
     fclose(f);
-    if (ok) jemu_sha256_final(&ctx, digest);
+    if (ok) gemu_sha256_final(&ctx, digest);
     return ok;
 }
 
-void jemu_sha256_hex(const uint8_t digest[JEMU_SHA256_DIGEST_LEN], char hex[65]) {
+void gemu_sha256_hex(const uint8_t digest[GEMU_SHA256_DIGEST_LEN], char hex[65]) {
     static const char h[] = "0123456789abcdef";
-    for (int i = 0; i < JEMU_SHA256_DIGEST_LEN; i++) {
+    for (int i = 0; i < GEMU_SHA256_DIGEST_LEN; i++) {
         hex[i*2+0] = h[digest[i] >> 4];
         hex[i*2+1] = h[digest[i] & 0xf];
     }

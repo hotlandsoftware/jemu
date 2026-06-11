@@ -6,7 +6,7 @@ SDL2_LIBS   := $(shell sdl2-config --libs   2>/dev/null || echo -lSDL2)
 
 # ── CHIP-8 ───────────────────────────────────────────────────────────────────
 
-CHIP8_CFLAGS := $(BASE_CFLAGS) -Ijemu-chip8/include $(SDL2_CFLAGS)
+CHIP8_CFLAGS := $(BASE_CFLAGS) -Igemu-chip8/include $(SDL2_CFLAGS)
 CHIP8_LDFLAGS = $(SDL2_LIBS) -lncursesw -pthread
 
 CORE_SRC := \
@@ -18,17 +18,17 @@ CORE_SRC := \
 	core/src/sha256.c
 
 CHIP8_SRC := \
-	jemu-chip8/src/main.c \
-	jemu-chip8/src/cpu/chip8_cpu.c \
-	jemu-chip8/src/hardware/machine.c \
-	jemu-chip8/src/vga/display_sdl.c \
-	jemu-chip8/src/vga/input_sdl.c \
-	jemu-chip8/src/vga/display_curses.c
+	gemu-chip8/src/main.c \
+	gemu-chip8/src/cpu/chip8_cpu.c \
+	gemu-chip8/src/hardware/machine.c \
+	gemu-chip8/src/vga/display_sdl.c \
+	gemu-chip8/src/vga/input_sdl.c \
+	gemu-chip8/src/vga/display_curses.c
 
 ifdef GTK
-CHIP8_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
+CHIP8_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
 CHIP8_LDFLAGS += $(shell pkg-config --libs gtk+-3.0)
-CHIP8_SRC    += jemu-chip8/src/vga/ui_gtk.c
+CHIP8_SRC    += gemu-chip8/src/vga/ui_gtk.c core/src/gtk_menu.c
 BUILDDIR     := build/gtk
 else
 BUILDDIR     := build/sdl
@@ -39,12 +39,12 @@ CHIP8_OBJ := $(patsubst %.c, $(BUILDDIR)/%.o, $(CORE_SRC) $(CHIP8_SRC))
 # ── RCA ──────────────────────────────────────────────────────────────────────
 
 RCA_CFLAGS := $(BASE_CFLAGS) \
-	-Ijemu-rca/include \
-	-Ijemu-rca/src \
-	-Ijemu-rca/src/cpu \
-	-Ijemu-rca/src/vga \
-	-Ijemu-rca/src/hardware \
-	-Ijemu-rca/src/devices \
+	-Igemu-rca/include \
+	-Igemu-rca/src \
+	-Igemu-rca/src/cpu \
+	-Igemu-rca/src/vga \
+	-Igemu-rca/src/hardware \
+	-Igemu-rca/src/devices \
 	$(SDL2_CFLAGS)
 RCA_LDFLAGS := $(SDL2_LIBS) -lncursesw -pthread
 
@@ -56,25 +56,25 @@ RCA_CORE_SRC := \
 	core/src/sha256.c
 
 RCA_SRC := \
-	jemu-rca/src/main.c \
-	jemu-rca/src/cpu/cdp1802.c \
-	jemu-rca/src/vga/cdp1861.c \
-	jemu-rca/src/vga/cdp1869.c \
-	jemu-rca/src/vga/display_sdl.c \
-	jemu-rca/src/vga/display_curses.c \
-	jemu-rca/src/devices/vip_devices.c \
-	jemu-rca/src/devices/pcspk.c \
-	jemu-rca/src/devices/tape.c \
-	jemu-rca/src/hardware/machine_vip.c \
-	jemu-rca/src/hardware/machine_destroyer.c \
-	jemu-rca/src/hardware/machine_studio2.c \
-	jemu-rca/src/hardware/machine_pecom.c \
-	jemu-rca/src/hardware/romdb.c
+	gemu-rca/src/main.c \
+	gemu-rca/src/cpu/cdp1802.c \
+	gemu-rca/src/vga/cdp1861.c \
+	gemu-rca/src/vga/cdp1869.c \
+	gemu-rca/src/vga/display_sdl.c \
+	gemu-rca/src/vga/display_curses.c \
+	gemu-rca/src/devices/vip_devices.c \
+	gemu-rca/src/devices/pcspk.c \
+	gemu-rca/src/devices/tape.c \
+	gemu-rca/src/hardware/machine_vip.c \
+	gemu-rca/src/hardware/machine_destroyer.c \
+	gemu-rca/src/hardware/machine_studio2.c \
+	gemu-rca/src/hardware/machine_pecom.c \
+	gemu-rca/src/hardware/romdb.c
 
 ifdef GTK
-RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DJEMU_GTK
+RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
 RCA_LDFLAGS += $(shell pkg-config --libs gtk+-3.0)
-RCA_SRC += jemu-rca/src/vga/display_gtk.c
+RCA_SRC += gemu-rca/src/vga/display_gtk.c core/src/gtk_menu.c
 endif
 
 ifdef GTK
@@ -89,13 +89,13 @@ RCA_OBJ := $(patsubst %.c, $(RCA_BUILDDIR)/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
 .PHONY: all clean rca-force
 
-all: bin/jemu-chip8 bin/jemu-rca bin/jemu-6502
+all: bin/gemu-chip8 bin/gemu-rca bin/gemu-6502
 
-bin/jemu-chip8: $(CHIP8_OBJ)
+bin/gemu-chip8: $(CHIP8_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(CHIP8_LDFLAGS) $(EXTRA_LDFLAGS)
 
-bin/jemu-rca: rca-force $(RCA_OBJ)
+bin/gemu-rca: rca-force $(RCA_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $(filter %.o,$^) $(RCA_LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -110,12 +110,12 @@ $(RCA_BUILDDIR)/%.o: %.c
 # ── 6502 ─────────────────────────────────────────────────────────────────────
 
 MOS_CFLAGS := $(BASE_CFLAGS) \
-	-Ijemu-6502/include \
-	-Ijemu-6502/src \
-	-Ijemu-6502/src/cpu \
-	-Ijemu-6502/src/hardware \
-	-Ijemu-6502/src/vga \
-	-Ijemu-6502/src/audio \
+	-Igemu-6502/include \
+	-Igemu-6502/src \
+	-Igemu-6502/src/cpu \
+	-Igemu-6502/src/hardware \
+	-Igemu-6502/src/vga \
+	-Igemu-6502/src/audio \
 	$(SDL2_CFLAGS)
 MOS_LDFLAGS := $(SDL2_LIBS) -pthread
 
@@ -127,34 +127,36 @@ MOS_CORE_SRC := \
 	core/src/sha256.c
 
 MOS_SRC := \
-	jemu-6502/src/main.c \
-	jemu-6502/src/cpu/mos6502.c \
-	jemu-6502/src/vga/rp2c02.c \
-	jemu-6502/src/vga/nes_sdl.c \
-	jemu-6502/src/audio/apu2a03.c \
-	jemu-6502/src/hardware/machine_generic.c \
-	jemu-6502/src/hardware/machine_nes.c \
-	jemu-6502/src/hardware/romdb.c
+	gemu-6502/src/main.c \
+	gemu-6502/src/cpu/mos6502.c \
+	gemu-6502/src/vga/rp2c02.c \
+	gemu-6502/src/vga/nes_sdl.c \
+	gemu-6502/src/audio/apu2a03.c \
+	gemu-6502/src/hardware/machine_generic.c \
+	gemu-6502/src/hardware/machine_nes.c \
+	gemu-6502/src/hardware/nes_devices.c \
+	gemu-6502/src/hardware/romdb.c
 
 MOS_OBJ := $(patsubst %.c, build/mos/%.o, $(MOS_CORE_SRC) $(MOS_SRC))
 
-bin/jemu-6502: $(MOS_OBJ)
+bin/gemu-6502: $(MOS_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(MOS_LDFLAGS) $(EXTRA_LDFLAGS)
 
 $(MOS_OBJ): $(CORE_HDRS) \
-	core/include/jemu/memory.h \
-	core/include/jemu/monitor.h \
-	core/include/jemu/vnc.h \
-	core/include/jemu/sha256.h \
-	jemu-6502/include/mos6502cfg.h \
-	jemu-6502/src/cpu/mos6502.h \
-	jemu-6502/src/hardware/generic.h \
-	jemu-6502/src/hardware/nes.h \
-	jemu-6502/src/hardware/romdb.h \
-	jemu-6502/src/vga/rp2c02.h \
-	jemu-6502/src/vga/nes_sdl.h \
-	jemu-6502/src/audio/apu2a03.h
+	core/include/gemu/memory.h \
+	core/include/gemu/monitor.h \
+	core/include/gemu/vnc.h \
+	core/include/gemu/sha256.h \
+	gemu-6502/include/mos6502cfg.h \
+	gemu-6502/src/cpu/mos6502.h \
+	gemu-6502/src/hardware/generic.h \
+	gemu-6502/src/hardware/nes.h \
+	gemu-6502/src/hardware/nes_devices.h \
+	gemu-6502/src/hardware/romdb.h \
+	gemu-6502/src/vga/rp2c02.h \
+	gemu-6502/src/vga/nes_sdl.h \
+	gemu-6502/src/audio/apu2a03.h
 
 build/mos/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -169,33 +171,33 @@ clean:
 
 CORE_HDRS := \
 	Makefile \
-	core/include/jemu/jemu.h \
-	core/include/jemu/args.h \
-	core/include/jemu/display.h
+	core/include/gemu/gemu.h \
+	core/include/gemu/args.h \
+	core/include/gemu/display.h
 
 $(CHIP8_OBJ): $(CORE_HDRS) \
-	core/include/jemu/memory.h \
-	core/include/jemu/cpu.h \
-	core/include/jemu/device.h \
-	core/include/jemu/monitor.h \
-	core/include/jemu/tcg.h \
-	core/include/jemu/vnc.h \
-	jemu-chip8/include/chip8.h
+	core/include/gemu/memory.h \
+	core/include/gemu/cpu.h \
+	core/include/gemu/device.h \
+	core/include/gemu/monitor.h \
+	core/include/gemu/tcg.h \
+	core/include/gemu/vnc.h \
+	gemu-chip8/include/chip8.h
 
 $(RCA_OBJ): $(CORE_HDRS) \
-	core/include/jemu/memory.h \
-	core/include/jemu/monitor.h \
-	core/include/jemu/vnc.h \
-	jemu-rca/include/rca.h \
-	jemu-rca/src/cpu/cdp1802.h \
-	jemu-rca/src/vga/rca_display.h \
-	jemu-rca/src/vga/cdp1861.h \
-	jemu-rca/src/vga/cdp1869.h \
-	jemu-rca/src/devices/pcspk.h \
-	jemu-rca/src/devices/tape.h \
-	jemu-rca/src/devices/vip_devices.h \
-	jemu-rca/src/hardware/vip.h \
-	jemu-rca/src/hardware/destroyer.h \
-	jemu-rca/src/hardware/studio2.h \
-	jemu-rca/src/hardware/romdb.h \
-	core/include/jemu/sha256.h
+	core/include/gemu/memory.h \
+	core/include/gemu/monitor.h \
+	core/include/gemu/vnc.h \
+	gemu-rca/include/rca.h \
+	gemu-rca/src/cpu/cdp1802.h \
+	gemu-rca/src/vga/rca_display.h \
+	gemu-rca/src/vga/cdp1861.h \
+	gemu-rca/src/vga/cdp1869.h \
+	gemu-rca/src/devices/pcspk.h \
+	gemu-rca/src/devices/tape.h \
+	gemu-rca/src/devices/vip_devices.h \
+	gemu-rca/src/hardware/vip.h \
+	gemu-rca/src/hardware/destroyer.h \
+	gemu-rca/src/hardware/studio2.h \
+	gemu-rca/src/hardware/romdb.h \
+	core/include/gemu/sha256.h

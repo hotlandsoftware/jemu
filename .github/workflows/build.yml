@@ -37,14 +37,14 @@ jobs:
             EXTRA_LDFLAGS="-static"
 
       - name: Package
-        run: tar czf jemu-linux-x86_64.tar.gz -C bin jemu-chip8 jemu-rca
+        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca
 
       - name: Upload artifact (PRs)
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: jemu-linux-x86_64
-          path: jemu-linux-x86_64.tar.gz
+          name: gemu-linux-x86_64
+          path: gemu-linux-x86_64.tar.gz
           retention-days: 7
 
       - name: Release (rolling pre-release)
@@ -52,7 +52,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: jemu
+          name: gemu
           prerelease: true
-          body: "This is an unstable build of jemu that is not suitable for production yet."
-          files: jemu-linux-x86_64.tar.gz
+          body: "This is an unstable build of gemu that is not suitable for production yet."
+          files: gemu-linux-x86_64.tar.gz
