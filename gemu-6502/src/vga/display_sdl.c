@@ -90,10 +90,21 @@ NesDisplay *nes_display_sdl_create(const char *title,
         SDL_WINDOW_SHOWN);
     if (!c->window) goto fail;
 
-    c->renderer = SDL_CreateRenderer(
-        c->window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_ACCELERATED);
+    if (!c->renderer)
+        c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_SOFTWARE);
     if (!c->renderer) goto fail;
+
+    {
+        SDL_RendererInfo info;
+        if (SDL_GetRendererInfo(c->renderer, &info) == 0 &&
+            (info.flags & SDL_RENDERER_SOFTWARE)) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
+                "No 3D acceleration",
+                "No 3D acceleration found. Performance and accuracy may suffer.",
+                c->window);
+        }
+    }
 
     SDL_RenderSetLogicalSize(c->renderer, 256 * scale, 240 * scale);
 
