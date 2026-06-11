@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JEMU | Cidelsa Destroyer</title>
+    <title>JEMU | COSMAC VIP</title>
     <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -85,15 +85,15 @@
     <div class="container">
         <a href="../index.html">Machines</a>
         <span>›</span>
-        Cidelsa Destroyer
+        COSMAC VIP
     </div>
 </div>
 
 <div class="machine-header">
     <div class="container">
-        <h1>Cidelsa Destroyer</h1>
+        <h1>COSMAC VIP</h1>
         <div class="subtitle">
-            <strong>Cidelsa</strong> &nbsp;·&nbsp; 1980 &nbsp;·&nbsp; PAL
+            <strong>RCA</strong> &nbsp;·&nbsp; 1977 &nbsp;·&nbsp; NTSC
         </div>
     </div>
 </div>
@@ -103,93 +103,47 @@
         <aside>
             <div class="info-panel">
                 <div class="info-header">Details</div>
-                <table><tr><td>Manufacturer</td><td>Cidelsa</td></tr>
-<tr><td>Year</td><td>1980</td></tr>
+                <table><tr><td>Manufacturer</td><td>RCA</td></tr>
+<tr><td>Year</td><td>1977</td></tr>
 <tr><td>CPU</td><td>RCA CDP1802</td></tr>
 <tr><td>Core</td><td>jemu-rca</td></tr>
-<tr><td>TV System</td><td>PAL</td></tr>
+<tr><td>TV System</td><td>NTSC</td></tr>
 <tr><td>Screen</td><td>64 × 128</td></tr>
-<tr><td>Input</td><td>Joystick + buttons</td></tr>
+<tr><td>Input</td><td>16-key hex keypad, keyboard</td></tr>
 <tr><td>Status</td><td><span class="badge badge-ok">Working</span></td></tr>
 <tr><td>Graphics</td><td><span class="badge badge-ok">Yes</span></td></tr>
 <tr><td>Sound</td><td><span class="badge badge-ok">Yes</span></td></tr></table>
             </div>
         </aside>
         <div>
-            <p class="description">Destroyer is an arcade game produced by Spanish company Cidelsa in 1980. Space Invaders-style shoot-em-up.
-                <br><br>This machine supports dip switches. You can use <code>dipswitch list</code> in the JEMU console for a list and <code>dipswitch (name) (value)</code> to set the value.</p>
+            <p class="description">The COSMAC VIP is a single-board microcomputer kit designed by Joseph Weisbecker at RCA. It includes a built-in CHIP-8 interpreter in ROM and was intended for hobbyist and educational use.</p>
 
             <div class="section-title">Run</div>
-            <div class="run-block">./bin/jemu-rca -M destroyer -rom /path/to/roms/destroyer/</div>
+            <div class="run-block">./bin/jemu-rca -M vip -rom /path/to/roms/vip/</div>
             <div class="section-title">Controls</div>
-            <table class="ctrls">
-                <thead><tr><th>Key</th><th>Action</th></tr></thead>
-                <tbody>
-                    <tr><td class="key">← / →</td><td>Move left / right</td></tr>
-                    <tr><td class="key">Space</td><td>Fire</td></tr>
-                    <tr><td class="key">1 / 2</td><td>1P start / 2P start</td></tr>
-                    <tr><td class="key">5 / 6</td><td>Insert coin (P1 / P2)</td></tr>
-                    <tr><td class="key">F2</td><td>Service</td></tr>
-                </tbody>
-            </table>
+            <div class="hex-grid">
+                <div class="hk">X<small>0</small></div><div class="hk">1<small>1</small></div><div class="hk">2<small>2</small></div><div class="hk">3<small>3</small></div>
+                <div class="hk">Q<small>4</small></div><div class="hk">W<small>5</small></div><div class="hk">E<small>6</small></div><div class="hk">A<small>7</small></div>
+                <div class="hk">S<small>8</small></div><div class="hk">D<small>9</small></div><div class="hk">Z<small>A</small></div><div class="hk">C<small>B</small></div>
+                <div class="hk">4<small>C</small></div><div class="hk">R<small>D</small></div><div class="hk">F<small>E</small></div><div class="hk">V<small>F</small></div>
+            </div>
 
             <div class="section-title">ROMs</div>
             <div class="rom-section"><table class="rom-table">
             <thead><tr><th>File</th><th>Address</th><th>SHA-256</th></tr></thead>
             <tbody><tr>
-                <td class="file">des d c2.ic4</td>
+                <td class="file">fpb_color.bin</td>
                 <td class="addr">0x0000</td>
-                <td class="hash">7a07c1f2afa8f54aed3cd25d9dcdbcc003b54ef4712956b5b2cae14c0ecf6ad2</td>
+                <td class="hash">292dd825ca0ed779e78d55fbab81c898be84ade5f87a661cae9d4509f9df62b8</td>
             </tr>
 <tr>
-                <td class="file">des d c2.ic5</td>
-                <td class="addr">0x0800</td>
-                <td class="hash">e80f8cf4fa4f1e6637b50232c621289387fd70b9c02bc5e1653e7b13970cbd88</td>
-            </tr>
-<tr>
-                <td class="file">des d c2.ic6</td>
-                <td class="addr">0x1000</td>
-                <td class="hash">824637bfab544ffe56e5cd7ab4e9fcae840316c482e7a3ba56af169b5a5cf53a</td>
-            </tr>
-<tr>
-                <td class="file">des d c2.ic7</td>
-                <td class="addr">0x1800</td>
-                <td class="hash">e273f6a3cbcf3d897c4ae12808cfcee1b456beae4649fb36f757837cb5dbc06e</td>
-            </tr>
-                <tr><td colspan="3" style="color:var(--muted);font-size:0.72rem;padding:0.3rem 0.6rem;background:var(--bg);border-bottom:1px solid var(--border)">Alternative ROM set</td></tr>
-<tr>
-                <td class="file">destryera_1</td>
-                <td class="addr">0x0000</td>
-                <td class="hash">d4a4efd063e1391abe26ace1e60638ee8acb9f71650e694d0f9a41bad2fed22d</td>
-            </tr>
-<tr>
-                <td class="file">destryera_2</td>
-                <td class="addr">0x0800</td>
-                <td class="hash">129bd155efe64e2e647edd4eeed1161578ca80d8a80214981fdfd433ec491cd3</td>
-            </tr>
-<tr>
-                <td class="file">destryera_3</td>
-                <td class="addr">0x1000</td>
-                <td class="hash">fe8b2a80d4e537925f9d4a43ef92da92cf8a251ff072fc96ad5dd756ee7132d2</td>
-            </tr>
-<tr>
-                <td class="file">destryera_4</td>
-                <td class="addr">0x1800</td>
-                <td class="hash">27072fcbd3b648d05cac6207a92178fb9a7454abae927520b8cebf2d06685b46</td>
+                <td class="file">vip.32.rom</td>
+                <td class="addr">0x0400</td>
+                <td class="hash">2fd9b152573adfe1c13f7f4c76900efd6980836a8dc52f6bc59c1af784ce6024</td>
             </tr></tbody>
         </table></div>
 
-            <div class="section-title">DIP Switches</div>
-            <table class="ctrls" style="margin-bottom:0.75rem">
-                <thead><tr><th>Switch</th><th>Mask</th><th>Options</th></tr></thead>
-                <tbody>
-                    <tr><td>Difficulty</td><td class="key">0x03</td><td>Very hard (0x00) · Hard (0x01) · <strong>Easy</strong> (0x02) · Very easy (0x03)</td></tr>
-                    <tr><td>Bonus life</td><td class="key">0x0C</td><td>5000 (0x0C) · 7000 (0x08) · <strong>10000</strong> (0x04) · 14000 (0x00)</td></tr>
-                    <tr><td>Lives</td><td class="key">0x30</td><td>1 (0x30) · 2 (0x20) · <strong>3</strong> (0x10) · 4 (0x00)</td></tr>
-                    <tr><td>Coinage</td><td class="key">0xC0</td><td><strong>A×1 / B×2</strong> (0xC0) · A×1.5 / B×3 (0x80) · A×2 / B×4 (0x40) · A×2.5 / B×5 (0x00)</td></tr>
-                </tbody>
-            </table>
-            <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1.5rem"><strong>Bold</strong> = default. Set from the monitor: <code style="font-family:monospace">dipswitch difficulty hard</code>, <code style="font-family:monospace">dipswitch lives 4</code>, etc</p>
+            
         </div>
     </div>
 </div>

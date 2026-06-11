@@ -20,13 +20,14 @@ static const JemuDevDesc machines[] = {
     {"altair2",    "Cidelsa Altair II arcade board (CDP1802 + CDP1869 VIS, alias for destroyer)"},
     {"apollo80",   "Academy Apollo 80 (alias for studio2)"},
     {"cm1200",     "Conic M-1200 (alias for studio2)"},
-    {"cosmac-vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
+    {"vip", "RCA COSMAC VIP (CDP1802 + CDP1861 Pixie, 2 KB RAM)"},
     {"destroyer",  "Cidelsa Destroyer arcade board (CDP1802 + CDP1869 VIS)"},
     {"generic",    "Generic RCA COSMAC (stub/not yet implemented)"},
     {"mpt02",      "Victory MPT-02 (alias for studio2)"},
     {"mpt02j",     "Hanimex MPT-02 (alias for studio2)"},
     {"mtc9016",    "Mustang 9016 (alias for studio2)"},
     {"pecom32",    "Pecom 32 (CDP1802 + CDP1869/1870 VIS-1870, 16 KB ROM, 32 KB RAM, PAL)"},
+    {"pecom64",    "Pecom 64 (CDP1802 + CDP1869/1870 VIS-1870, 16 KB ROM, 32 KB RAM, PAL, alias for pecom32)"},
     {"studio2",    "RCA Studio II (CDP1802 + CDP1861 Pixie, cartridge-based)"},
     {"sm1200",     "Sheen M1200 (alias for studio2)"},
     {"visicom",     "Visicom COM-100 (alias for studio2)"},
@@ -191,7 +192,7 @@ int main(int argc, char *argv[]) {
         return 1;
 
     if (args.machine) {
-        if      (strcmp(args.machine, "cosmac-vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
+        if      (strcmp(args.machine, "vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;
         else if (strcmp(args.machine, "altair2")    == 0) cfg.machine = RCA_MACHINE_DESTROYER;
         else if (strcmp(args.machine, "apollo80")   == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "cm1200")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
@@ -199,6 +200,7 @@ int main(int argc, char *argv[]) {
         else if (strcmp(args.machine, "generic")    == 0) cfg.machine = RCA_MACHINE_GENERIC;
         else if (strcmp(args.machine, "mpt02")      == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "pecom32")    == 0) { cfg.machine = RCA_MACHINE_PECOM32; cfg.tv_mode = RCA_TV_PAL; }
+        else if (strcmp(args.machine, "pecom64")    == 0) { cfg.machine = RCA_MACHINE_PECOM32; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "mpt02j")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "mtc9016")    == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }
         else if (strcmp(args.machine, "sm1200")     == 0) { cfg.machine = RCA_MACHINE_STUDIO2; cfg.tv_mode = RCA_TV_PAL; }

@@ -53,9 +53,12 @@ static uint8_t pecom_mem_read(uint16_t addr, void *ud) {
     if (addr >= PECOM32_PRAM_BASE)
         return cdp1869_page_read(&s->vis, addr - PECOM32_PRAM_BASE);
 
-    /* RAM bank 2: 0xC000–0xF3FF */
-    if (addr >= 0xC000u)
+    /* 0xC000–0xF3FF: ROM chip 2 (Pecom 64) or RAM bank 2 (Pecom 32) */
+    if (addr >= 0xC000u) {
+        if (s->rom_size > PECOM32_ROM_SIZE)
+            return s->rom[addr - 0x8000u];
         return s->ram2[addr - 0xC000u];
+    }
 
     /* RAM bank 1: 0x0000–0x7FFF */
     return s->ram1[addr];
@@ -80,9 +83,10 @@ static void pecom_mem_write(uint16_t addr, uint8_t val, void *ud) {
         return;
     }
 
-    /* RAM bank 2: 0xC000–0xF3FF */
+    /* 0xC000–0xF3FF: read-only ROM2 (Pecom 64) or writable RAM2 (Pecom 32) */
     if (addr >= 0xC000u) {
-        s->ram2[addr - 0xC000u] = val;
+        if (s->rom_size <= PECOM32_ROM_SIZE)
+            s->ram2[addr - 0xC000u] = val;
         return;
     }
 
@@ -300,10 +304,11 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
                              (int)(sizeof(pecom_palette) / sizeof(pecom_palette[0])));
     }
 
-    /* Load ROM — file is the raw 16 KB image, mapped at 0x8000 */
+    /* Load ROM (16 KB for Pecom 32, 32 KB across two chips for Pecom 64) */
+    s->rom_size = 0;
     for (int i = 0; i < cfg->n_roms; i++) {
         uint32_t off = cfg->roms[i].addr;
-        JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
+        JemuMemory tmp = {.data = s->rom, .size = sizeof(s->rom)};
         size_t len = 0;
         if (!jemu_mem_load_file(&tmp, off, cfg->roms[i].path, &len)) {
             fprintf(stderr, "jemu-rca: pecom32: failed to load '%s'\n",
@@ -311,6 +316,8 @@ RcaPecom32State *rca_pecom32_create(const RcaConfig *cfg) {
             free(s);
             return NULL;
         }
+        uint32_t end = off + (uint32_t)len;
+        if (end > s->rom_size) s->rom_size = end;
         printf("jemu-rca: %zu bytes @ ROM+0x%04X  ← %s\n",
                len, off, cfg->roms[i].path);
     }
@@ -337,9 +344,13 @@ void rca_pecom32_reset(RcaPecom32State *s, const RcaConfig *cfg) {
     memset(s->keys_live,  0, sizeof(s->keys_live));
     memset(s->keys_latch, 0, sizeof(s->keys_latch));
 
+    s->rom_size = 0;
     for (int i = 0; i < cfg->n_roms; i++) {
-        JemuMemory tmp = {.data = s->rom, .size = PECOM32_ROM_SIZE};
-        jemu_mem_load_file(&tmp, cfg->roms[i].addr, cfg->roms[i].path, NULL);
+        JemuMemory tmp = {.data = s->rom, .size = sizeof(s->rom)};
+        size_t len = 0;
+        jemu_mem_load_file(&tmp, cfg->roms[i].addr, cfg->roms[i].path, &len);
+        uint32_t end = cfg->roms[i].addr + (uint32_t)len;
+        if (end > s->rom_size) s->rom_size = end;
     }
 }
 

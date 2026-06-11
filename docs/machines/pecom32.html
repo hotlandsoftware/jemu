@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JEMU | Pecom 32</title>
+    <title>JEMU | PECOM 32</title>
     <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -76,13 +76,13 @@
     <div class="container">
         <a href="../index.html">Machines</a>
         <span>›</span>
-        Pecom 32
+        PECOM 32
     </div>
 </div>
 
 <div class="machine-header">
     <div class="container">
-        <h1>Pecom 32</h1>
+        <h1>PECOM 32</h1>
         <div class="subtitle">
             <strong>Ei Niš / RIZ Zagreb</strong> &nbsp;·&nbsp; 1985 &nbsp;·&nbsp; PAL
         </div>
@@ -103,17 +103,18 @@
 <tr><td>RAM</td><td>32 KB</td></tr>
 <tr><td>TV System</td><td>PAL</td></tr>
 <tr><td>Screen</td><td>64 × 128</td></tr>
-<tr><td>Input</td><td>KEyboard</td></tr>
-<tr><td>Status</td><td><span class="badge badge-yes">Partially Working</span></td></tr>
+<tr><td>Input</td><td>Keyboard</td></tr>
+<tr><td>Status</td><td><span class="badge badge-yes">Working</span></td></tr>
 <tr><td>Graphics</td><td><span class="badge badge-yes">Yes</span></td></tr>
 <tr><td>Sound</td><td><span class="badge badge-no">No</span></td></tr>
                 </table>
             </div>
         </aside>
         <div>
-            <p class="description">The Pecom 32 is a Yugoslav home computer produced in 1985 by Ei Niš and RIZ Zagreb. It is based on the RCA CDP1802B processor running at 2.813 MHz and ships with a built-in BASIC 3 interpreter in 16 KB ROM. The machine has 32 KB of RAM available to user programs.
+            <p class="description">The PECOM 32 is a Yugoslavic computer released in 1985 by Ei Niš and RIZ Zagreb.
                 <br><br>
-                The Pecom 32 uses a CDP1861 Pixie chip for video output and supports composite and RF television connections. Text mode fits 24 lines of 40 characters; graphics use a pseudo-graphic character set. Sound is produced via the Q output line of the CDP1802.</p>
+                The PECOM was sold to local schools to teach IT/Computer Science to students. Notably, unlike many other computers in the Eastern Block, this machine used an imported CDP1802 processor instead of an 8080 or Z80 since Yugoslavia had somewhat better market conditions and could import them from the US. The PECOM32 has 32 KB of RAM, 16 KB of ROM, and has a BASIC interpreter built in. 
+            </p>
 
             <div class="section-title">Run</div>
             <div class="run-block">./bin/jemu-rca -M pecom32 -rom /path/to/roms/090786.bin</div>

@@ -29,6 +29,10 @@ static const RcaRomDbEntry rom_db[] = {
     { "be7a432e440a5614e3790f7d7105d64cf0b02c0c62f4991c0ad8d9bab8271118",  0x0400, "cm1200", "86677b.ic14" },
     { "d826c3bdb10be43f62e6fb15a31dc34c6c62a7afd6249fcdb6d40d46f4522d3c",  0x0c00, "cm1200", "87201.ic12"  },
 
+    /* Cosmac VIP */
+    { "292dd825ca0ed779e78d55fbab81c898be84ade5f87a661cae9d4509f9df62b8",  0x0000, "vip", "fpb_color.bin"  },
+    { "2fd9b152573adfe1c13f7f4c76900efd6980836a8dc52f6bc59c1af784ce6024",  0x0400, "vip", "vip.32.rom" },
+
     /* COM-100 */
     { "7a95530b9be7fe487e027a5ea7ffe4a7561762cc3fc8cdc535d6f36e5f23c8a0", 0x0000, "visicom", "visicom.q003" },
 
@@ -63,6 +67,12 @@ static const RcaRomDbEntry rom_db[] = {
 
     /* Pecom 32 */
     { "a8104b9bf317828bd480874d8c434bdbf6eb3990a81f45fc7ac4010a1aa70f36", 0x0000, "pecom32", "090786.bin" },
+
+    /* Pecom 64 */
+    { "ff253c34a0e26e00c335ec44c16813535700cadd19d404c59dfc2d77c0b62dc1", 0x4000, "pecom64", "rom_2_g_24.02.88_d.bin" },
+    { "c482015b19328c20d2f848aa8766a3215b01f7a531f1e02c4a59633fb3200438", 0x0000, "pecom64", "rom_1_g_24.02.88_l.bin" },
+    { "8fd89b395c728b25204247b5cb3cfbe7051b3a7dc9eaa9676543cb17f2969cf5", 0x4000, "pecom64", "170887-rom2.bin" },
+    { "02a91a4fd3cff5eb6de10a5a531d66b71f1cefddf9a91c7f7a1493f1882c2a44", 0x0000, "pecom64", "170887-rom1.bin" },
 
     /* RCA Studio II */
     { "1945550109cec3a8003dd64cd70c02bf78326f2f7f91be1fc6fca8067647c54c", 0x0000, "studio2", "84932.ic11" },
