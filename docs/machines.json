@@ -9,7 +9,9 @@
   { "alias": "studio2",     "name": "RCA Studio II",       "year": 1977, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": ""                            },
   { "alias": "sm1200",      "name": "Sheen M-1200",        "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Sheen"    },
   { "alias": "mpt02",       "name": "Soundic MPT-02",      "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Soundic"  },
-  { "alias": "pecom32",     "name": "Pecom 32",            "year": 1985, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": false,  "notes": "Supports BASIC 3, no cassette support yet." },
-  { "alias": "pecom64",     "name": "Pecom 64",            "year": 1987, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": false,  "notes": "No cassette support yet" },
-  { "alias": "visicom",     "name": "Visicom COM-100",     "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Toshiba"  }
+  { "alias": "pecom32",     "name": "PECOM 32",            "year": 1985, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": false,  "notes": "Supports BASIC 3, no cassette support yet." },
+  { "alias": "pecom64",     "name": "PECOM 64",            "year": 1987, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": false,  "notes": "No cassette support yet" },
+  { "alias": "visicom",     "name": "Visicom COM-100",     "year": 1978, "cpu": "RCA CDP1802", "core": "jemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Toshiba"  },
+  { "alias": "generic-6502", "name": "Generic MOS 6502",    "year": 1975, "cpu": "MOS 6502",    "core": "jemu-6502",  "status": "skeleton", "gfx": false, "sound": false, "notes": "Flat 64 KB, generic machine"   },
+  { "alias": "nes", "name": "Nintendo Entertainment System (NTSC)",    "year": 1985, "cpu": "Ricoh 2A03",    "core": "jemu-6502",  "status": "partially working", "gfx": true, "sound": true, "notes": "glitchy, only supports mapper 0 games for now"   }
 ]

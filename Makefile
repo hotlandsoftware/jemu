@@ -89,7 +89,7 @@ RCA_OBJ := $(patsubst %.c, $(RCA_BUILDDIR)/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
 .PHONY: all clean rca-force
 
-all: bin/jemu-chip8 bin/jemu-rca
+all: bin/jemu-chip8 bin/jemu-rca bin/jemu-6502
 
 bin/jemu-chip8: $(CHIP8_OBJ)
 	@mkdir -p bin
@@ -106,6 +106,61 @@ $(BUILDDIR)/%.o: %.c
 $(RCA_BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(RCA_CFLAGS) -c -o $@ $<
+
+# ── 6502 ─────────────────────────────────────────────────────────────────────
+
+MOS_CFLAGS := $(BASE_CFLAGS) \
+	-Ijemu-6502/include \
+	-Ijemu-6502/src \
+	-Ijemu-6502/src/cpu \
+	-Ijemu-6502/src/hardware \
+	-Ijemu-6502/src/vga \
+	-Ijemu-6502/src/audio \
+	$(SDL2_CFLAGS)
+MOS_LDFLAGS := $(SDL2_LIBS) -pthread
+
+MOS_CORE_SRC := \
+	core/src/memory.c \
+	core/src/args.c \
+	core/src/monitor.c \
+	core/src/vnc.c \
+	core/src/sha256.c
+
+MOS_SRC := \
+	jemu-6502/src/main.c \
+	jemu-6502/src/cpu/mos6502.c \
+	jemu-6502/src/vga/rp2c02.c \
+	jemu-6502/src/vga/nes_sdl.c \
+	jemu-6502/src/audio/apu2a03.c \
+	jemu-6502/src/hardware/machine_generic.c \
+	jemu-6502/src/hardware/machine_nes.c \
+	jemu-6502/src/hardware/romdb.c
+
+MOS_OBJ := $(patsubst %.c, build/mos/%.o, $(MOS_CORE_SRC) $(MOS_SRC))
+
+bin/jemu-6502: $(MOS_OBJ)
+	@mkdir -p bin
+	$(CC) -o $@ $^ $(MOS_LDFLAGS) $(EXTRA_LDFLAGS)
+
+$(MOS_OBJ): $(CORE_HDRS) \
+	core/include/jemu/memory.h \
+	core/include/jemu/monitor.h \
+	core/include/jemu/vnc.h \
+	core/include/jemu/sha256.h \
+	jemu-6502/include/mos6502cfg.h \
+	jemu-6502/src/cpu/mos6502.h \
+	jemu-6502/src/hardware/generic.h \
+	jemu-6502/src/hardware/nes.h \
+	jemu-6502/src/hardware/romdb.h \
+	jemu-6502/src/vga/rp2c02.h \
+	jemu-6502/src/vga/nes_sdl.h \
+	jemu-6502/src/audio/apu2a03.h
+
+build/mos/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(MOS_CFLAGS) -c -o $@ $<
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 clean:
 	rm -rf build bin
