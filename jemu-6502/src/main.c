@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
     /* NES default sound: 2A03 when any output is active; silent when headless.
      * Skipped if the user already chose -soundhw explicitly. */
     if (cfg.machine == MOS_MACHINE_NES && !cfg.sound_explicit && cfg.cart_path) {
-        bool has_output = (cfg.display_type != JEMU_DISPLAY_NONE) || cfg.vnc_addr;
+        bool has_output = (cfg.display_type == JEMU_DISPLAY_SDL);
         if (has_output)
             cfg.sound = MOS_SOUND_2A03;
     }
