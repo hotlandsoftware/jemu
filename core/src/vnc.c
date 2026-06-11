@@ -14,7 +14,6 @@ typedef SOCKET sock_t;
 #  ifndef MSG_NOSIGNAL
 #    define MSG_NOSIGNAL 0
 #  endif
-typedef int ssize_t;
 #else
 #  include <unistd.h>
 #  include <sys/select.h>
