@@ -508,12 +508,14 @@ void rca_machine_run(RcaVipState *s, const RcaConfig *cfg) {
         Uint32 t0 = SDL_GetTicks();
 
         /* ── Input ── */
-#ifndef GEMU_NO_CURSES
+#ifdef GEMU_NO_CURSES
+        vip_poll_display(s, cfg, display, &quit);
+#else
         if (cfg->display_type == GEMU_DISPLAY_CURSES)
             rca_display_curses_poll_vip(display, s, &quit);
-#endif
         else
             vip_poll_display(s, cfg, display, &quit);
+#endif
         if (quit) break;
 
         /* Sync any held key to key_down */
