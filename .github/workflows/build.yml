@@ -69,7 +69,9 @@ jobs:
       - name: Gather runtime DLLs
         run: |
           for exe in bin/*.exe; do
-            ldd "$exe" | grep '/mingw64/' | awk '{print $3}' | xargs -I{} cp -n {} bin/
+            ldd "$exe" | grep '/mingw64/' | awk '{print $3}' | while read dll; do
+              cp -n "$dll" bin/ 2>/dev/null || true
+            done
           done
 
       - name: Package
