@@ -151,9 +151,9 @@ static bool ines_load(NesState *s, const char *path) {
     else                  s->cart.mirror = RP2C02_MIRROR_HORIZONTAL;
 
     switch (s->cart.mapper) {
-    case 0: case 1: case 2: case 4: break;
+    case 0: case 1: case 2: case 4: case 66: break;
     default:
-        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2, MMC3/4)\n",
+        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2, MMC3/4, GxROM/66)\n",
                 s->cart.mapper);
         fclose(f); return false;
     }
@@ -541,6 +541,24 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
         return bit;
     }
     if (addr == 0x4017) {
+        if (s->cfg->ports[1] == NES_DEVICE_ZAPPER) {
+            /* Bit 4: trigger (1 = half-pulled); bit 3: light sense (0 = detected) */
+            uint8_t trigger = (s->zapper_trigger_ttl > 0) ? 0x10u : 0u;
+            uint8_t light   = 0x08u; /* default: not detected */
+            int sl = s->ppu.scanline;
+            if (sl >= 0 && sl < 240 &&
+                s->zapper_x >= 0 && s->zapper_x < 256 &&
+                s->zapper_y >= 0 && s->zapper_y < 240 &&
+                abs(sl - s->zapper_y) <= 8) {
+                uint32_t argb = s->ppu.pixels_argb[s->zapper_y * RP2C02_WIDTH + s->zapper_x];
+                uint8_t r = (uint8_t)(argb >> 16);
+                uint8_t g = (uint8_t)(argb >>  8);
+                uint8_t b = (uint8_t)(argb);
+                uint8_t luma = (uint8_t)((r * 77u + g * 150u + b * 29u) >> 8);
+                if (luma >= 85) light = 0; /* bright pixel → light detected */
+            }
+            return trigger | light;
+        }
         if (s->cfg->ports[1] != NES_DEVICE_CONTROLLER) return 0;
         if (s->ctrl_strobe) return (s->ctrl_state[1] & NES_BTN_A) ? 1u : 0u;
         uint8_t bit = s->ctrl_shift[1] & 1;
@@ -623,6 +641,16 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
     if (addr >= 0x8000) {
         if      (s->cart.mapper == 1) mmc1_serial_write(s, addr, val);
         else if (s->cart.mapper == 2) s->prg_offsets[0] = ((uint32_t)(val % s->cart.prg_banks)) * 0x4000u;
+        else if (s->cart.mapper == 66) {
+            uint32_t prg_size = (uint32_t)s->cart.prg_banks * 0x4000u;
+            uint32_t chr_size = (uint32_t)s->cart.chr_banks * 0x2000u;
+            s->prg_offsets[0] = (((uint32_t)(val >> 4) & 3u) * 0x8000u) % prg_size;
+            s->prg_offsets[1] = s->prg_offsets[0] + 0x4000u;
+            if (chr_size > 0) {
+                s->chr_offsets[0] = (((uint32_t)val & 3u) * 0x2000u) % chr_size;
+                s->chr_offsets[1] = s->chr_offsets[0] + 0x1000u;
+            }
+        }
         else if (s->cart.mapper == 4) mmc3_cpu_write(s, addr, val);
     }
 }
@@ -684,6 +712,14 @@ static void nes_handle_keys(NesState *s) {
         nes_display_poll(s->display);
         if (s->cfg->ports[0] == NES_DEVICE_CONTROLLER)
             s->ctrl_state[0] = nes_display_ctrl1(s->display);
+        if (s->cfg->ports[1] == NES_DEVICE_ZAPPER) {
+            bool btn;
+            nes_display_zapper(s->display, &s->zapper_x, &s->zapper_y, &btn);
+            if (btn && s->zapper_trigger_ttl == 0)
+                s->zapper_trigger_ttl = 10; /* 10-frame trigger pulse */
+            if (s->zapper_trigger_ttl > 0)
+                s->zapper_trigger_ttl--;
+        }
     }
 
     /* VNC: drain the key queue; translate to controller buttons if port 0 has one */
@@ -749,6 +785,11 @@ static void nes_reset(NesState *s) {
         s->prg_offsets[1] = (uint32_t)(s->cart.prg_banks - 1) * 0x4000u;
         s->chr_offsets[0] = 0;
         s->chr_offsets[1] = 0x1000u;
+    } else if (s->cart.mapper == 66) {
+        s->prg_offsets[0] = 0;
+        s->prg_offsets[1] = 0x4000u;
+        s->chr_offsets[0] = 0;
+        s->chr_offsets[1] = 0x1000u;
     } else if (s->cart.mapper == 4) {
         memset(s->mmc3_regs, 0, sizeof(s->mmc3_regs));
         s->mmc3_bank_sel    = 0;
@@ -781,12 +822,11 @@ NesState *nes_create(const MosConfig *cfg) {
     s->ppu.chr_ud    = s;
     s->ppu.mirror    = s->cart.mirror;
 
-    /* Wire up CPU — always 2A03 for NES */
     mos6502_init(&s->cpu);
-    s->cpu.mem_read       = nes_cpu_read;
-    s->cpu.mem_write      = nes_cpu_write;
-    s->cpu.mem_ud         = s;
-    s->cpu.decimal_disable = true;
+    s->cpu.mem_read        = nes_cpu_read;
+    s->cpu.mem_write       = nes_cpu_write;
+    s->cpu.mem_ud          = s;
+    s->cpu.decimal_disable = (cfg->cpu != MOS_CPU_6502);
 
     /* APU — only initialise when sound is enabled */
     if (cfg->sound == MOS_SOUND_2A03) {

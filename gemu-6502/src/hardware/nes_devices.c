@@ -4,6 +4,7 @@
 
 static const NesDeviceDesc devices[] = {
     {"nes-controller", "NES Standard Controller", NES_DEVICE_CONTROLLER},
+    {"zapper",         "NES Zapper (light gun)",  NES_DEVICE_ZAPPER},
 };
 
 const NesDeviceDesc *nes_device_list(int *count) {

@@ -31,6 +31,7 @@ void gemu_video_sdl_present_mono(GemuVideoSdl *v, const uint8_t *pixels,
 void gemu_video_sdl_clear(GemuVideoSdl *v);
 
 bool gemu_video_sdl_is_software(const GemuVideoSdl *v);
+void gemu_video_sdl_mouse_logical(GemuVideoSdl *v, int *x, int *y);
 
 #ifdef GEMU_GTK
 #include <gtk/gtk.h>

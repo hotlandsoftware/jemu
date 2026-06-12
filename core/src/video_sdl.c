@@ -133,3 +133,13 @@ void gemu_video_sdl_clear(GemuVideoSdl *v) {
 bool gemu_video_sdl_is_software(const GemuVideoSdl *v) {
     return v && v->software;
 }
+
+void gemu_video_sdl_mouse_logical(GemuVideoSdl *v, int *x, int *y) {
+    if (!v) { if (x) *x = -1; if (y) *y = -1; return; }
+    int wx, wy;
+    SDL_GetMouseState(&wx, &wy);
+    float lx, ly;
+    SDL_RenderWindowToLogical(v->renderer, wx, wy, &lx, &ly);
+    if (x) *x = (int)lx;
+    if (y) *y = (int)ly;
+}

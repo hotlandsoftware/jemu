@@ -93,6 +93,10 @@ typedef struct NesState {
     /* Game Genie patches */
     NesGgPatch gg_patches[NES_GG_MAX];
     int        gg_count;
+
+    /* Zapper (port 2) */
+    int      zapper_x, zapper_y;      /* cursor position in NES pixel coords */
+    int      zapper_trigger_ttl;       /* frames remaining in trigger pulse */
 } NesState;
 
 NesState *nes_create (const MosConfig *cfg);

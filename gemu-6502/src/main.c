@@ -16,7 +16,7 @@
 
 static const GemuDevDesc machines[] = {
     {"generic", "Generic MOS 6502 (flat 64 KB, ROM at user-specified address)"},
-    {"nes",     "Nintendo Entertainment System (Ricoh 2A03 + RP2C02, Mapper 0/1)"},
+    {"nes",     "Nintendo Entertainment System (Ricoh 2A03 + RP2C02)"},
 };
 static const GemuDevDesc cpus[] = {
     {"6502", "MOS Technology 6502"},
@@ -109,6 +109,8 @@ int main(int argc, char *argv[]) {
     if (args.cpu) {
         if      (strcmp(args.cpu, "6502") == 0) cfg.cpu = MOS_CPU_6502;
         else if (strcmp(args.cpu, "2a03") == 0) cfg.cpu = MOS_CPU_2A03;
+    } else if (cfg.machine == MOS_MACHINE_NES) {
+        cfg.cpu = MOS_CPU_2A03;
     }
 
     if (args.vga) {
@@ -208,9 +210,18 @@ int main(int argc, char *argv[]) {
 #endif
     }
 
-    /* NES default: standard controller on port 0 if no -device was given */
-    if (cfg.machine == MOS_MACHINE_NES && cfg.n_ports == 0)
-        cfg.ports[0] = NES_DEVICE_CONTROLLER;
+    /* NES defaults: controller on port 0 if nothing was specified;
+       zapper always lives on port 1 (physical port 2, $4017) — auto-insert
+       a controller on port 0 when the zapper was specified alone. */
+    if (cfg.machine == MOS_MACHINE_NES) {
+        if (cfg.n_ports == 0) {
+            cfg.ports[cfg.n_ports++] = NES_DEVICE_CONTROLLER;
+        } else if (cfg.n_ports == 1 && cfg.ports[0] == NES_DEVICE_ZAPPER) {
+            cfg.ports[1] = NES_DEVICE_ZAPPER;
+            cfg.ports[0] = NES_DEVICE_CONTROLLER;
+            cfg.n_ports  = 2;
+        }
+    }
 
     /* NES default sound: 2A03 when any output is active; silent when headless.
      * Skipped if the user already chose -soundhw explicitly. */

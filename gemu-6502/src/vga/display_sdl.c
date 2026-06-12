@@ -10,6 +10,8 @@ typedef struct {
     GemuVideoSdl   *video;
     bool            quit;
     uint8_t         ctrl1;
+    int             zapper_x, zapper_y;
+    bool            zapper_btn;
 } NesDisplaySdlCtx;
 
 static uint8_t sdl_key_to_btn(SDL_Keycode key) {
@@ -42,6 +44,16 @@ static void sdl_poll(void *vctx) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_QUIT) { c->quit = true; continue; }
+        if (ev.type == SDL_MOUSEMOTION ||
+            ev.type == SDL_MOUSEBUTTONDOWN ||
+            ev.type == SDL_MOUSEBUTTONUP) {
+            gemu_video_sdl_mouse_logical(c->video, &c->zapper_x, &c->zapper_y);
+            if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT)
+                c->zapper_btn = true;
+            if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT)
+                c->zapper_btn = false;
+            continue;
+        }
         if (ev.type != SDL_KEYDOWN && ev.type != SDL_KEYUP) continue;
         SDL_Keycode key = ev.key.keysym.sym;
         if (ev.type == SDL_KEYDOWN && key == SDLK_ESCAPE) { c->quit = true; continue; }
@@ -50,6 +62,13 @@ static void sdl_poll(void *vctx) {
         if (ev.type == SDL_KEYDOWN) c->ctrl1 |=  btn;
         else                        c->ctrl1 &= ~btn;
     }
+}
+
+static void sdl_zapper(void *vctx, int *x, int *y, bool *trigger) {
+    NesDisplaySdlCtx *c = vctx;
+    if (x)       *x       = c->zapper_x;
+    if (y)       *y       = c->zapper_y;
+    if (trigger) *trigger = c->zapper_btn;
 }
 
 static void sdl_destroy(void *vctx) {
@@ -89,6 +108,7 @@ NesDisplay *nes_display_sdl_create(const char *title,
     d->destroy     = sdl_destroy;
     d->should_quit = sdl_should_quit;
     d->ctrl1       = sdl_ctrl1;
+    d->zapper      = sdl_zapper;
     d->ctx         = c;
     return d;
 

@@ -14,6 +14,7 @@ struct NesDisplay {
     void    (*destroy)     (void *ctx);
     bool    (*should_quit) (void *ctx);
     uint8_t (*ctrl1)       (void *ctx);
+    void    (*zapper)      (void *ctx, int *x, int *y, bool *trigger);
     void    *ctx;
 };
 
@@ -47,6 +48,15 @@ static inline bool    nes_display_should_quit(NesDisplay *d)
                           { return d && d->should_quit(d->ctx); }
 static inline uint8_t nes_display_ctrl1(NesDisplay *d)
                           { return d ? d->ctrl1(d->ctx) : 0; }
+static inline void nes_display_zapper(NesDisplay *d, int *x, int *y, bool *trigger) {
+    if (d && d->zapper) {
+        d->zapper(d->ctx, x, y, trigger);
+    } else {
+        if (x) *x = -1;
+        if (y) *y = -1;
+        if (trigger) *trigger = false;
+    }
+}
 static inline void    nes_display_destroy(NesDisplay *d) {
     if (!d) return;
     d->destroy(d->ctx);
