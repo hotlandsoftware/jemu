@@ -13,5 +13,5 @@
   { "alias": "pecom64",     "name": "PECOM 64",            "year": 1987, "cpu": "RCA CDP1802", "core": "gemu-rca",   "status": "working", "gfx": true, "sound": false,  "notes": "No cassette support yet" },
   { "alias": "visicom",     "name": "Visicom COM-100",     "year": 1978, "cpu": "RCA CDP1802", "core": "gemu-rca",   "status": "working", "gfx": true, "sound": true,  "notes": "Studio II clone by Toshiba"  },
   { "alias": "generic-6502", "name": "Generic MOS 6502",    "year": 1975, "cpu": "MOS 6502",    "core": "gemu-6502",  "status": "skeleton", "gfx": false, "sound": false, "notes": "Flat 64 KB, generic machine"   },
-  { "alias": "nes", "name": "Nintendo Entertainment System (NTSC)",    "year": 1985, "cpu": "Ricoh 2A03",    "core": "gemu-6502",  "status": "working", "gfx": true, "sound": true, "notes": "graphics somewhat glitchy"   }
+  { "alias": "nes", "name": "Nintendo Entertainment System (NTSC)",    "year": 1985, "cpu": "Ricoh 2A03",    "core": "gemu-6502",  "status": "working", "gfx": true, "sound": true, "notes": ""   }
 ]

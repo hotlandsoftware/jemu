@@ -53,3 +53,7 @@ Passes an address-qualified file argument to devices that support it. For exampl
 > ``eject (device)``
 
 Ejects media from a registered device. 
+
+> ``screendump (image name)``
+
+Dumps a screenshot of the emulator.
