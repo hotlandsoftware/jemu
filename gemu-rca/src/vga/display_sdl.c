@@ -1,5 +1,6 @@
 #include "rca_display.h"
 #include "cdp1802.h"
+#include "gemu/video.h"
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -8,12 +9,8 @@
 #define RCA_SDL_MAX_KEYS 128
 
 typedef struct {
-    SDL_Window   *window;
-    SDL_Renderer *renderer;
-    SDL_Texture  *texture;
-    int           scale;
-    const uint32_t *palette;
-    int           n_colors;
+    GemuVideoSdl *video;
+    bool          indexed;
     uint32_t      pixel_on;
     uint32_t      pixel_off;
     bool          quit;
@@ -31,30 +28,16 @@ typedef struct {
 
 static void sdl_render(void *ctx, const uint8_t *vram, int w, int h) {
     VipSdlCtx *c = ctx;
-    void *pixels; int pitch;
-    SDL_LockTexture(c->texture, NULL, &pixels, &pitch);
-    uint32_t *px = pixels;
-    for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-            if (c->palette && c->n_colors > 0) {
-                uint8_t idx = vram[y * w + x];
-                if (idx >= c->n_colors) idx = (uint8_t)(c->n_colors - 1);
-                px[y * (pitch / 4) + x] = c->palette[idx];
-            } else {
-                px[y * (pitch / 4) + x] = vram[y * w + x] ? c->pixel_on : c->pixel_off;
-            }
-    SDL_UnlockTexture(c->texture);
-    SDL_RenderClear(c->renderer);
-    SDL_RenderCopy(c->renderer, c->texture, NULL, NULL);
-    SDL_RenderPresent(c->renderer);
+    if (c->indexed)
+        gemu_video_sdl_present_indexed(c->video, vram, w, h);
+    else
+        gemu_video_sdl_present_mono(c->video, vram, w, h,
+                                    c->pixel_on, c->pixel_off);
 }
 
 static void sdl_destroy(void *ctx) {
     VipSdlCtx *c = ctx;
-    SDL_DestroyTexture(c->texture);
-    SDL_DestroyRenderer(c->renderer);
-    SDL_DestroyWindow(c->window);
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    gemu_video_sdl_destroy(c->video);
     free(c);
 }
 
@@ -164,36 +147,24 @@ static RcaDisplay *sdl_create_common(const char *title, int w, int h,
                                      int n_colors, uint32_t on,
                                      uint32_t off) {
     if (scale <= 0) scale = VIP_DEFAULT_SCALE;
-    if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) return NULL;
 
     VipSdlCtx *c = calloc(1, sizeof(*c));
-    c->scale = scale;
-    c->palette = palette;
-    c->n_colors = n_colors;
+    if (!c) return NULL;
+    c->indexed = palette && n_colors > 0;
     c->pixel_on = on;
     c->pixel_off = off;
-    c->window = SDL_CreateWindow(title ? title : "GEMU", SDL_WINDOWPOS_CENTERED,
-                                 SDL_WINDOWPOS_CENTERED,
-                                 w * scale, h * scale, SDL_WINDOW_SHOWN);
-    if (!c->window) { free(c); SDL_QuitSubSystem(SDL_INIT_VIDEO); return NULL; }
-
-    c->renderer = SDL_CreateRenderer(c->window, -1,
-                      SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!c->renderer) { SDL_DestroyWindow(c->window); free(c); return NULL; }
-
-    SDL_RenderSetLogicalSize(c->renderer, w * scale, h * scale);
-    c->texture = SDL_CreateTexture(c->renderer, SDL_PIXELFORMAT_ARGB8888,
-                                   SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (!c->texture) {
-        SDL_DestroyRenderer(c->renderer);
-        SDL_DestroyWindow(c->window);
-        free(c);
-        return NULL;
-    }
-
-    SDL_SetRenderDrawColor(c->renderer, 0, 0, 0, 255);
-    SDL_RenderClear(c->renderer);
-    SDL_RenderPresent(c->renderer);
+    c->video = gemu_video_sdl_create(&(GemuVideoSdlSpec){
+        .title         = title ? title : "GEMU",
+        .width         = w,
+        .height        = h,
+        .window_width  = w * scale,
+        .window_height = h * scale,
+        .palette       = palette,
+        .n_colors      = n_colors,
+        .renderer      = GEMU_RENDERER_AUTO,
+        .log_prefix    = "rca",
+    });
+    if (!c->video) { free(c); return NULL; }
 
     RcaDisplay *d = calloc(1, sizeof(*d));
     d->render = sdl_render;

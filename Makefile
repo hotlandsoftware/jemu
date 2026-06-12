@@ -22,6 +22,7 @@ CORE_SRC := \
 	core/src/tcg.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
+	core/src/video_sdl.c \
 	core/src/args.c \
 	core/src/sha256.c \
 	core/src/screendump.c
@@ -69,6 +70,7 @@ RCA_CORE_SRC := \
 	core/src/args.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
+	core/src/video_sdl.c \
 	core/src/sha256.c \
 	core/src/screendump.c
 
@@ -98,7 +100,7 @@ endif
 ifdef GTK
 RCA_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
 RCA_LDFLAGS += $(shell pkg-config --libs gtk+-3.0)
-RCA_SRC += gemu-rca/src/vga/display_gtk.c core/src/gtk_menu.c
+RCA_SRC += gemu-rca/src/vga/display_gtk.c core/src/gtk_menu.c core/src/video_gtk.c
 endif
 
 ifdef GTK
@@ -151,6 +153,7 @@ MOS_CORE_SRC := \
 	core/src/args.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
+	core/src/video_sdl.c \
 	core/src/sha256.c \
 	core/src/screendump.c
 
@@ -168,7 +171,7 @@ MOS_SRC := \
 ifdef GTK
 MOS_CFLAGS   += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
 MOS_LDFLAGS  += $(shell pkg-config --libs gtk+-3.0)
-MOS_SRC      += gemu-6502/src/vga/display_gtk.c core/src/gtk_menu.c
+MOS_SRC      += gemu-6502/src/vga/display_gtk.c core/src/gtk_menu.c core/src/video_gtk.c
 MOS_BUILDDIR := build/mos-gtk
 else
 MOS_BUILDDIR := build/mos
@@ -184,6 +187,7 @@ $(MOS_OBJ): $(CORE_HDRS) \
 	core/include/gemu/memory.h \
 	core/include/gemu/monitor.h \
 	core/include/gemu/vnc.h \
+	core/include/gemu/video.h \
 	core/include/gemu/sha256.h \
 	gemu-6502/include/mos6502cfg.h \
 	gemu-6502/src/cpu/mos6502.h \

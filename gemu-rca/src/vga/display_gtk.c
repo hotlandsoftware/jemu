@@ -1,5 +1,5 @@
 #include "rca_display.h"
-#include "gemu/gtk_menu.h"
+#include "gemu/video.h"
 #include <gtk/gtk.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,17 +8,10 @@
 #define RCA_GTK_DEFAULT_SCALE 4
 
 typedef struct {
-    GtkWidget       *window;
-    GtkWidget       *drawing_area;
-    cairo_surface_t *surface;
-    int              w;
-    int              h;
-    int              scale;
-    const uint32_t  *palette;
-    int              n_colors;
+    GemuVideoGtk    *video;
+    bool             indexed;
     uint32_t         pixel_on;
     uint32_t         pixel_off;
-    bool             active;
     bool             quit;
     struct {
         uint32_t keysym;
@@ -78,24 +71,6 @@ static uint32_t gtk_key_to_rca(guint keyval) {
     }
 }
 
-static gboolean on_draw(GtkWidget *w, cairo_t *cr, gpointer data) {
-    (void)w;
-    RcaGtkCtx *c = data;
-    if (!c->active) {
-        cairo_set_source_rgb(cr, 0, 0, 0);
-        cairo_paint(cr);
-        return FALSE;
-    }
-
-    cairo_save(cr);
-    cairo_scale(cr, c->scale, c->scale);
-    cairo_set_source_surface(cr, c->surface, 0, 0);
-    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
-    cairo_paint(cr);
-    cairo_restore(cr);
-    return FALSE;
-}
-
 static gboolean on_key(GtkWidget *w, GdkEventKey *ev, gpointer data) {
     (void)w;
     RcaGtkCtx *c = data;
@@ -120,8 +95,7 @@ static gboolean on_delete(GtkWidget *w, GdkEvent *ev, gpointer data) {
 
 static void gtk_poll(void *ctx) {
     (void)ctx;
-    while (gtk_events_pending())
-        gtk_main_iteration_do(FALSE);
+    gemu_video_gtk_poll();
 }
 
 static bool gtk_should_quit(void *ctx) {
@@ -145,35 +119,17 @@ static uint32_t gtk_pop_keysym(void *ctx) {
 
 static void gtk_render(void *ctx, const uint8_t *vram, int w, int h) {
     RcaGtkCtx *c = ctx;
-    if (w != c->w || h != c->h)
-        return;
-
-    uint32_t *px = (uint32_t *)cairo_image_surface_get_data(c->surface);
-    int stride = cairo_image_surface_get_stride(c->surface) / 4;
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            if (c->palette && c->n_colors > 0) {
-                uint8_t idx = vram[y * w + x];
-                if (idx >= c->n_colors) idx = (uint8_t)(c->n_colors - 1);
-                px[y * stride + x] = c->palette[idx];
-            } else {
-                px[y * stride + x] = vram[y * w + x] ? c->pixel_on : c->pixel_off;
-            }
-        }
-    }
-    cairo_surface_mark_dirty(c->surface);
-    c->active = true;
-    gtk_widget_queue_draw(c->drawing_area);
-    gtk_poll(c);
+    if (c->indexed)
+        gemu_video_gtk_present_indexed(c->video, vram, w, h);
+    else
+        gemu_video_gtk_present_mono(c->video, vram, w, h,
+                                    c->pixel_on, c->pixel_off);
 }
 
 static void gtk_destroy(void *ctx) {
     RcaGtkCtx *c = ctx;
     if (!c) return;
-    if (c->surface)
-        cairo_surface_destroy(c->surface);
-    if (c->window)
-        gtk_widget_destroy(c->window);
+    gemu_video_gtk_destroy(c->video);
     free(c);
 }
 
@@ -182,41 +138,28 @@ static RcaDisplay *gtk_create_common(const char *title, int w, int h,
                                      int n_colors, uint32_t on,
                                      uint32_t off, GemuMonitor *mon) {
     if (scale <= 0) scale = RCA_GTK_DEFAULT_SCALE;
-    if (!gtk_init_check(NULL, NULL))
-        return NULL;
 
     RcaGtkCtx *c = calloc(1, sizeof(*c));
     if (!c) return NULL;
-    c->w = w;
-    c->h = h;
-    c->scale = scale;
-    c->palette = palette;
-    c->n_colors = n_colors;
+    c->indexed = palette && n_colors > 0;
     c->pixel_on = on;
     c->pixel_off = off;
-    c->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    c->video = gemu_video_gtk_create(&(GemuVideoGtkSpec){
+        .title    = title ? title : "GEMU",
+        .width    = w,
+        .height   = h,
+        .scale    = scale,
+        .palette  = palette,
+        .n_colors = n_colors,
+        .monitor  = mon,
+    });
+    if (!c->video) { free(c); return NULL; }
 
-    c->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(c->window), title ? title : "GEMU");
-    gtk_window_set_resizable(GTK_WINDOW(c->window), FALSE);
-
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_container_add(GTK_CONTAINER(c->window), vbox);
-
-    gemu_gtk_add_action_menu(vbox, mon);
-
-    c->drawing_area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(c->drawing_area, w * scale, h * scale);
-    gtk_box_pack_start(GTK_BOX(vbox), c->drawing_area, TRUE, TRUE, 0);
-
-    gtk_widget_add_events(c->window, GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK);
-    g_signal_connect(c->window,       "delete-event",      G_CALLBACK(on_delete), c);
-    g_signal_connect(c->window,       "key-press-event",   G_CALLBACK(on_key),    c);
-    g_signal_connect(c->window,       "key-release-event", G_CALLBACK(on_key),    c);
-    g_signal_connect(c->drawing_area, "draw",              G_CALLBACK(on_draw),   c);
-
-    gtk_widget_show_all(c->window);
-    gtk_poll(c);
+    GtkWidget *window = gemu_video_gtk_window(c->video);
+    gtk_widget_add_events(window, GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK);
+    g_signal_connect(window, "delete-event",      G_CALLBACK(on_delete), c);
+    g_signal_connect(window, "key-press-event",   G_CALLBACK(on_key),    c);
+    g_signal_connect(window, "key-release-event", G_CALLBACK(on_key),    c);
 
     RcaDisplay *d = calloc(1, sizeof(*d));
     if (!d) {
