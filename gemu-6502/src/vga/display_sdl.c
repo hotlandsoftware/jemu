@@ -98,7 +98,7 @@ NesDisplay *nes_display_sdl_create(const char *title,
     c->window = SDL_CreateWindow(
         title ? title : "gemu-6502 NES",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        256 * scale, 240 * scale,
+        320 * scale, 240 * scale,
         SDL_WINDOW_SHOWN);
     if (!c->window) goto fail;
 

@@ -875,7 +875,7 @@ void nes_run(NesState *s, const MosConfig *cfg) {
         GemuMonCmd cmd;
         while ((cmd = gemu_monitor_poll(s->monitor)) != GEMU_MON_NONE) {
             if      (cmd == GEMU_MON_QUIT)   { quit = true; break; }
-            else if (cmd == GEMU_MON_RESET)  nes_reset(s);
+            else if (cmd == GEMU_MON_RESET)  { nes_sav_save(s); nes_reset(s); }
             else if (cmd == GEMU_MON_CUSTOM) {
                 const char *text = gemu_monitor_command_text(s->monitor);
                 while (*text == ' ' || *text == '\t') text++;
