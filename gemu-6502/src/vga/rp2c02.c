@@ -416,17 +416,6 @@ void rp2c02_tick(Rp2c02 *ppu) {
             bg_shift_tick(ppu);
             do_bg_fetches(ppu, dot);
         }
-        /* Sprite shift counters tick during visible pixels */
-        if (dot >= 1 && dot <= 256 && visible_sl) {
-            for (int i = 0; i < 8; i++) {
-                if (ppu->spr_x[i] > 0) {
-                    ppu->spr_x[i]--;
-                } else {
-                    ppu->spr_shift_lo[i] <<= 1;
-                    ppu->spr_shift_hi[i] <<= 1;
-                }
-            }
-        }
         if (dot == 256) incr_y(ppu);
         if (dot == 257) {
             copy_x_from_t(ppu);
@@ -445,6 +434,18 @@ void rp2c02_tick(Rp2c02 *ppu) {
         uint8_t color = output_pixel(ppu, dot - 1);
         ppu->pixels[idx] = color;
         ppu->pixels_argb[idx] = rp2c02_palette_rgb[color & 0x3F];
+    }
+
+    /* ── Sprite counters and shift (after pixel output so bit 7 is read before shift) */
+    if (rendering && visible_sl && dot >= 1 && dot <= 256) {
+        for (int i = 0; i < 8; i++) {
+            if (ppu->spr_x[i] > 0) {
+                ppu->spr_x[i]--;
+            } else {
+                ppu->spr_shift_lo[i] <<= 1;
+                ppu->spr_shift_hi[i] <<= 1;
+            }
+        }
     }
 
     /* ── Mapper scanline IRQ ─────────────────────────────────────────── */

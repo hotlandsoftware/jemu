@@ -97,6 +97,10 @@ typedef struct NesState {
     /* Zapper (port 2) */
     int      zapper_x, zapper_y;      /* cursor position in NES pixel coords */
     int      zapper_trigger_ttl;       /* frames remaining in trigger pulse */
+
+    /* Monitor key injection */
+    uint8_t  ctrl_inject_mask;        /* button bits to hold */
+    int      ctrl_inject_frames;      /* frames remaining (counts down to 0) */
 } NesState;
 
 NesState *nes_create (const MosConfig *cfg);

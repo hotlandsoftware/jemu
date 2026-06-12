@@ -641,7 +641,10 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
     if (addr >= 0x8000) {
         if      (s->cart.mapper == 1) mmc1_serial_write(s, addr, val);
         else if (s->cart.mapper == 2) s->prg_offsets[0] = ((uint32_t)(val % s->cart.prg_banks)) * 0x4000u;
-        else if (s->cart.mapper == 66 && addr < 0xC000) {
+        else if (s->cart.mapper == 66) {
+            /* GxROM has bus conflicts: the CPU write value is ANDed with
+             * the ROM byte currently driving the data bus. */
+            val &= nes_prg_direct(s, addr);
             uint32_t prg_size = (uint32_t)s->cart.prg_banks * 0x4000u;
             uint32_t chr_size = (uint32_t)s->cart.chr_banks * 0x2000u;
             s->prg_offsets[0] = (((uint32_t)(val >> 4) & 3u) * 0x8000u) % prg_size;
@@ -707,6 +710,12 @@ static void nes_media_status(void *ud, char *buf, size_t buf_len) {
 #define XK_ShiftR 0xFFE2u
 
 static void nes_handle_keys(NesState *s) {
+    /* Headless mode: clear state each frame (no display to assign it) */
+    if (!s->display && !s->vnc) {
+        s->ctrl_state[0] = 0;
+        s->ctrl_state[1] = 0;
+    }
+
     /* SDL display: poll events and read back full button state */
     if (s->display) {
         nes_display_poll(s->display);
@@ -720,6 +729,12 @@ static void nes_handle_keys(NesState *s) {
             if (s->zapper_trigger_ttl > 0)
                 s->zapper_trigger_ttl--;
         }
+    }
+
+    /* Monitor key injection */
+    if (s->ctrl_inject_frames > 0) {
+        s->ctrl_state[0] |= s->ctrl_inject_mask;
+        s->ctrl_inject_frames--;
     }
 
     /* VNC: drain the key queue; translate to controller buttons if port 0 has one */
@@ -927,7 +942,53 @@ void nes_run(NesState *s, const MosConfig *cfg) {
                 if (strncasecmp(text, "gamegenie", 9) == 0 &&
                     (text[9] == '\0' || text[9] == ' ' || text[9] == '\t'))
                     nes_gamegenie_cmd(s, text);
-                else
+                else if (strncasecmp(text, "sendkey", 7) == 0 &&
+                         (text[7] == '\0' || text[7] == ' ' || text[7] == '\t')) {
+                    const char *p = text + 7;
+                    while (*p == ' ' || *p == '\t') p++;
+                    uint8_t btn = 0;
+                    if      (strncasecmp(p, "a",      1) == 0 && (p[1] < 'a' || p[1] > 'z')) btn = NES_BTN_A;
+                    else if (strncasecmp(p, "b",      1) == 0 && (p[1] < 'a' || p[1] > 'z')) btn = NES_BTN_B;
+                    else if (strncasecmp(p, "start",  5) == 0) btn = NES_BTN_START;
+                    else if (strncasecmp(p, "select", 6) == 0) btn = NES_BTN_SELECT;
+                    else if (strncasecmp(p, "up",     2) == 0) btn = NES_BTN_UP;
+                    else if (strncasecmp(p, "down",   4) == 0) btn = NES_BTN_DOWN;
+                    else if (strncasecmp(p, "left",   4) == 0) btn = NES_BTN_LEFT;
+                    else if (strncasecmp(p, "right",  5) == 0) btn = NES_BTN_RIGHT;
+                    if (btn) {
+                        while (*p && *p != ' ' && *p != '\t') p++;
+                        while (*p == ' ' || *p == '\t') p++;
+                        int frames = (*p >= '1' && *p <= '9') ? (int)strtol(p, NULL, 10) : 5;
+                        s->ctrl_inject_mask   = btn;
+                        s->ctrl_inject_frames = frames;
+                        printf("sendkey: holding 0x%02X for %d frame(s)\n", btn, frames);
+                    } else {
+                        printf("sendkey: unknown button (a b start select up down left right)\n");
+                    }
+                } else if (strncasecmp(text, "ppudump", 7) == 0 &&
+                           (text[7] == '\0' || text[7] == ' ' || text[7] == '\t')) {
+                    Rp2c02 *ppu = &s->ppu;
+                    printf("PPU: ctrl=%02X mask=%02X status=%02X v=%04X t=%04X x=%d w=%d\n",
+                           ppu->ppuctrl, ppu->ppumask, ppu->ppustatus,
+                           ppu->v, ppu->t, ppu->x, ppu->w);
+                    printf("Palette BG:  ");
+                    for (int i = 0; i < 16; i++) printf("%02X ", ppu->palette[i]);
+                    printf("\nPalette SPR: ");
+                    for (int i = 0; i < 16; i++) printf("%02X ", ppu->palette[i + 16]);
+                    printf("\nSL0 pixels[0..31]: ");
+                    for (int i = 0; i < 32; i++) printf("%02X ", ppu->pixels[i]);
+                    printf("\nSL8 pixels[0..31]: ");
+                    for (int i = 0; i < 32; i++) printf("%02X ", ppu->pixels[256*8 + i]);
+                    printf("\nNT row0 tiles: ");
+                    for (int i = 0; i < 32; i++) printf("%02X ", ppu->vram[i]);
+                    printf("\nNT row1 tiles: ");
+                    for (int i = 0; i < 32; i++) printf("%02X ", ppu->vram[32 + i]);
+                    printf("\nNT attr[0..7]: ");
+                    for (int i = 0; i < 8; i++) printf("%02X ", ppu->vram[0x3C0 + i]);
+                    printf("\nOAM[0..3]:     ");
+                    for (int i = 0; i < 16; i++) printf("%02X ", ppu->oam[i]);
+                    printf("\n");
+                } else
                     gemu_monitor_unknown_command(s->monitor);
             }
         }
