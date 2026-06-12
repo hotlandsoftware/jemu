@@ -769,9 +769,11 @@ static bool nes_screendump(void *ud, const char *path) {
 
 static void nes_reset(NesState *s) {
     rp2c02_reset(&s->ppu);
-    mos6502_reset(&s->cpu);
-    apu2a03_reset(&s->apu);
-    s->ppu.mirror = s->cart.mirror;  /* restored below for mappers that control it */
+    s->ppu.mirror = s->cart.mirror;
+
+    /* Mapper bank state must be set before mos6502_reset reads the reset
+       vector, otherwise prg_offsets[1] is 0 and the vector is fetched from
+       the wrong physical bank. */
     if (s->cart.mapper == 1) {
         s->mmc1_shift       = 0;
         s->mmc1_shift_count = 0;
@@ -800,6 +802,9 @@ static void nes_reset(NesState *s) {
         s->cpu.irq          = false;
         mmc3_update_banks(s);
     }
+
+    mos6502_reset(&s->cpu);
+    apu2a03_reset(&s->apu);
 }
 
 NesState *nes_create(const MosConfig *cfg) {
