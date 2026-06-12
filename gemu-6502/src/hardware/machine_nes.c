@@ -641,7 +641,7 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
     if (addr >= 0x8000) {
         if      (s->cart.mapper == 1) mmc1_serial_write(s, addr, val);
         else if (s->cart.mapper == 2) s->prg_offsets[0] = ((uint32_t)(val % s->cart.prg_banks)) * 0x4000u;
-        else if (s->cart.mapper == 66) {
+        else if (s->cart.mapper == 66 && addr < 0xC000) {
             uint32_t prg_size = (uint32_t)s->cart.prg_banks * 0x4000u;
             uint32_t chr_size = (uint32_t)s->cart.chr_banks * 0x2000u;
             s->prg_offsets[0] = (((uint32_t)(val >> 4) & 3u) * 0x8000u) % prg_size;

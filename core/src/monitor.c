@@ -1,17 +1,38 @@
 #include "gemu/monitor.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 #include <ctype.h>
 #ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
 #  include <io.h>
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
 #  define isatty(fd)   _isatty(fd)
 #  define STDIN_FILENO 0
 #  define strcasecmp   _stricmp
+#  define strncasecmp  _strnicmp
+typedef SOCKET sock_t;
+#  define INVALID_SOCK   INVALID_SOCKET
+#  define sock_close(s)  closesocket(s)
+#  ifndef MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#  endif
 #else
 #  include <strings.h>
 #  include <unistd.h>
+#  include <sys/select.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+typedef int sock_t;
+#  define INVALID_SOCK   (-1)
+#  define sock_close(s)  close(s)
+#  ifndef MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#  endif
 #endif
 
 #define QUEUE_SIZE 32
@@ -29,12 +50,19 @@ typedef struct {
     char         text[256];
 } MonEntry;
 
+typedef enum {
+    MON_BACKEND_STDIO,
+    MON_BACKEND_NONE,
+    MON_BACKEND_TELNET,
+} MonBackend;
+
 struct GemuMonitor {
     MonEntry        queue[QUEUE_SIZE];
     int             head, tail;
     pthread_mutex_t lock;
     pthread_t       thread;
     bool            running;
+    bool            thread_started;
     bool            paused;
     char            last_text[256];
     uint32_t        last_step_count;
@@ -42,7 +70,157 @@ struct GemuMonitor {
     int             n_media;
     bool          (*screendump_cb)(void *ud, const char *path);
     void           *screendump_ud;
+    MonBackend      backend;
+    char            telnet_host[64];
+    int             telnet_port;
+    sock_t          listen_fd;
+    sock_t          client_fd;
 };
+
+static char default_monitor_spec[256] = "stdio";
+
+/* ── Transport helpers ───────────────────────────────────────────────────── */
+
+void gemu_monitor_set_default(const char *spec) {
+    snprintf(default_monitor_spec, sizeof(default_monitor_spec), "%s",
+             (spec && spec[0]) ? spec : "stdio");
+}
+
+static bool sendall(sock_t fd, const void *buf, size_t n) {
+    const char *p = buf;
+    while (n) {
+        int r = send(fd, p, (int)n, MSG_NOSIGNAL);
+        if (r <= 0) return false;
+        p += r;
+        n -= (size_t)r;
+    }
+    return true;
+}
+
+static void mon_vprintf(const GemuMonitor *mon, const char *fmt, va_list ap) {
+    if (!mon || mon->backend == MON_BACKEND_NONE) return;
+    if (mon->backend == MON_BACKEND_TELNET) {
+        if (mon->client_fd == INVALID_SOCK) return;
+        char buf[2048];
+        int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+        if (n <= 0) return;
+        size_t len = (n < (int)sizeof(buf)) ? (size_t)n : sizeof(buf) - 1;
+        sendall(mon->client_fd, buf, len);
+        return;
+    }
+    vprintf(fmt, ap);
+    fflush(stdout);
+}
+
+static void mon_printf(const GemuMonitor *mon, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    mon_vprintf(mon, fmt, ap);
+    va_end(ap);
+}
+
+static bool parse_monitor_spec(GemuMonitor *mon, const char *spec) {
+    spec = (spec && spec[0]) ? spec : "stdio";
+    mon->backend = MON_BACKEND_STDIO;
+    mon->telnet_host[0] = '\0';
+    mon->telnet_port = 0;
+
+    if (strcasecmp(spec, "stdio") == 0)
+        return true;
+    if (strcasecmp(spec, "none") == 0) {
+        mon->backend = MON_BACKEND_NONE;
+        return true;
+    }
+
+    const char *prefix = "telnet:";
+    size_t prefix_len = strlen(prefix);
+    if (strncasecmp(spec, prefix, prefix_len) == 0) {
+        char target[128];
+        const char *addr = spec + prefix_len;
+        const char *comma = strchr(addr, ',');
+        size_t len = comma ? (size_t)(comma - addr) : strlen(addr);
+        if (len == 0 || len >= sizeof(target)) {
+            fprintf(stderr, "monitor: invalid telnet address '%s'\n", spec);
+            mon->backend = MON_BACKEND_NONE;
+            return false;
+        }
+        memcpy(target, addr, len);
+        target[len] = '\0';
+
+        char *colon = strrchr(target, ':');
+        if (!colon || colon == target || colon[1] == '\0') {
+            fprintf(stderr, "monitor: expected telnet:HOST:PORT,server,nowait\n");
+            mon->backend = MON_BACKEND_NONE;
+            return false;
+        }
+        *colon++ = '\0';
+        char *end = NULL;
+        long port = strtol(colon, &end, 10);
+        if (port <= 0 || port > 65535 || (end && *end != '\0')) {
+            fprintf(stderr, "monitor: invalid telnet port '%s'\n", colon);
+            mon->backend = MON_BACKEND_NONE;
+            return false;
+        }
+        if (strlen(target) >= sizeof(mon->telnet_host)) {
+            fprintf(stderr, "monitor: telnet host is too long\n");
+            mon->backend = MON_BACKEND_NONE;
+            return false;
+        }
+        snprintf(mon->telnet_host, sizeof(mon->telnet_host), "%s", target);
+        mon->telnet_port = (int)port;
+        mon->backend = MON_BACKEND_TELNET;
+        return true;
+    }
+
+    fprintf(stderr, "monitor: unknown backend '%s' (using stdio)\n", spec);
+    return false;
+}
+
+static bool monitor_open_telnet(GemuMonitor *mon) {
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        fprintf(stderr, "monitor: WSAStartup failed\n");
+        return false;
+    }
+#endif
+    mon->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (mon->listen_fd == INVALID_SOCK) {
+        fprintf(stderr, "monitor: socket failed\n");
+        return false;
+    }
+
+    int one = 1;
+    setsockopt(mon->listen_fd, SOL_SOCKET, SO_REUSEADDR,
+               (const char *)&one, sizeof(one));
+
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof(a));
+    a.sin_family = AF_INET;
+    a.sin_port = htons((uint16_t)mon->telnet_port);
+    if (strcmp(mon->telnet_host, "*") == 0 ||
+        strcmp(mon->telnet_host, "0.0.0.0") == 0) {
+        a.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (inet_pton(AF_INET, mon->telnet_host, &a.sin_addr) != 1) {
+        fprintf(stderr, "monitor: invalid listen host '%s'\n", mon->telnet_host);
+        sock_close(mon->listen_fd);
+        mon->listen_fd = INVALID_SOCK;
+        return false;
+    }
+
+    if (bind(mon->listen_fd, (struct sockaddr *)&a, sizeof(a)) < 0 ||
+        listen(mon->listen_fd, 1) < 0) {
+        fprintf(stderr, "monitor: failed to listen on %s:%d\n",
+                mon->telnet_host, mon->telnet_port);
+        sock_close(mon->listen_fd);
+        mon->listen_fd = INVALID_SOCK;
+        return false;
+    }
+
+    fprintf(stderr, "monitor: telnet listening on %s:%d\n",
+            mon->telnet_host, mon->telnet_port);
+    return true;
+}
 
 /* ── Media helpers ───────────────────────────────────────────────────────── */
 
@@ -83,17 +261,17 @@ static GemuMediaDevice *find_media(GemuMonitor *mon, const char *name) {
 
 static void list_media(const GemuMonitor *mon) {
     if (!mon || mon->n_media == 0) {
-        printf("media: no media devices registered\n");
+        mon_printf(mon, "media: no media devices registered\n");
         return;
     }
-    printf("Media devices:\n");
+    mon_printf(mon, "Media devices:\n");
     for (int i = 0; i < mon->n_media; i++) {
         const GemuMediaDevice *dev = &mon->media[i];
         char status[256] = "";
         if (dev->status)
             dev->status(dev->ud, status, sizeof(status));
-        printf("  %-12s %-12s %s\n",
-               dev->name, dev->kind ? dev->kind : "media", status);
+        mon_printf(mon, "  %-12s %-12s %s\n",
+                   dev->name, dev->kind ? dev->kind : "media", status);
     }
 }
 
@@ -109,9 +287,9 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
     if (strcasecmp(verb, "screendump") == 0) {
         char *arg = unquote_arg(p);
         if (!*arg) {
-            printf("usage: screendump <filename>[.png]\n");
+            mon_printf(mon, "usage: screendump <filename>[.png]\n");
         } else if (!mon->screendump_cb) {
-            printf("screendump: not supported by this machine\n");
+            mon_printf(mon, "screendump: not supported by this machine\n");
         } else {
             mon->screendump_cb(mon->screendump_ud, arg);
         }
@@ -132,15 +310,15 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
 
     char *dev_name = next_token(&p);
     if (!dev_name) {
-        printf("usage: change <device> <file> | eject <device>\n");
+        mon_printf(mon, "usage: change <device> <file> | eject <device>\n");
         *out_cmd = GEMU_MON_NONE;
         return true;
     }
 
     GemuMediaDevice *dev = find_media(mon, dev_name);
     if (!dev) {
-        printf("%s: no such media device '%s' (try 'media')\n",
-               verb, dev_name);
+        mon_printf(mon, "%s: no such media device '%s' (try 'media')\n",
+                   verb, dev_name);
         *out_cmd = GEMU_MON_NONE;
         return true;
     }
@@ -150,12 +328,12 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
     if (is_eject) {
         char *extra = next_token(&p);
         if (extra) {
-            printf("usage: eject <device>\n");
+            mon_printf(mon, "usage: eject <device>\n");
             *out_cmd = GEMU_MON_NONE;
             return true;
         }
         if (!dev->eject) {
-            printf("%s: device '%s' cannot be ejected\n", verb, dev_name);
+            mon_printf(mon, "%s: device '%s' cannot be ejected\n", verb, dev_name);
             *out_cmd = GEMU_MON_NONE;
             return true;
         }
@@ -163,20 +341,20 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
     } else {
         char *arg = unquote_arg(p);
         if (!*arg) {
-            printf("usage: change <device> <file>\n");
+            mon_printf(mon, "usage: change <device> <file>\n");
             *out_cmd = GEMU_MON_NONE;
             return true;
         }
         if (strcasecmp(arg, "eject") == 0) {
             if (!dev->eject) {
-                printf("change: device '%s' cannot be ejected\n", dev_name);
+                mon_printf(mon, "change: device '%s' cannot be ejected\n", dev_name);
                 *out_cmd = GEMU_MON_NONE;
                 return true;
             }
             result = dev->eject(dev->ud, err, sizeof(err));
         } else {
             if (!dev->change) {
-                printf("change: device '%s' cannot be changed\n", dev_name);
+                mon_printf(mon, "change: device '%s' cannot be changed\n", dev_name);
                 *out_cmd = GEMU_MON_NONE;
                 return true;
             }
@@ -186,9 +364,9 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
 
     if (result == GEMU_MEDIA_ERR) {
         if (err[0])
-            printf("%s: %s\n", verb, err);
+            mon_printf(mon, "%s: %s\n", verb, err);
         else
-            printf("%s: failed for media device '%s'\n", verb, dev_name);
+            mon_printf(mon, "%s: failed for media device '%s'\n", verb, dev_name);
         *out_cmd = GEMU_MON_NONE;
         return true;
     }
@@ -229,64 +407,134 @@ static void enqueue_text(GemuMonitor *mon, const char *line) {
 
 /* ── Reader thread ────────────────────────────────────────────────────────── */
 
+static void trim_line(char *line) {
+    size_t len = strlen(line);
+    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' ||
+                       line[len-1] == ' '  || line[len-1] == '\t'))
+        line[--len] = '\0';
+}
+
+static bool monitor_handle_line(GemuMonitor *mon, char *line) {
+    trim_line(line);
+    if (line[0] == '\0') return true;
+
+    if (!strcmp(line, "help") || !strcmp(line, "?")) {
+        mon_printf(mon,
+        "  change <device> <file> -- insert/change media\n"
+        "  cont / c -- resume emulation\n"
+        "  dipswitch -- lists DIP switches (when supported)\n"
+        "  dipswitch [name] [value] -- sets DIP switch (when supported)\n"
+        "  eject <device> -- eject media\n"
+        "  gamegenie add [code] -- add game genie code\n"
+        "  gamegenie list -- show active game genie codes\n"
+        "  gamegenie delete [code] -- deletes game genie code\n"
+        "  media -- list media devices\n"
+        "  q / quit -- quits the machine immediately\n"
+        "  reset -- reset the machine\n"
+        "  screendump <file>[.png] -- save screenshot (PPM or PNG)\n"
+        "  step / s [count] -- step through (x) instructions (defaults to 1)\n"
+        "  stop / halt -- halt emulation\n");
+    } else if (!strcmp(line, "reset") || !strcmp(line, "system_reset")) {
+        enqueue(mon, GEMU_MON_RESET, 0);
+    } else if (!strcmp(line, "q") || !strcmp(line, "quit")) {
+        enqueue(mon, GEMU_MON_QUIT, 0);
+        return false;
+    } else if (!strcmp(line, "stop") || !strcmp(line, "halt")) {
+        enqueue(mon, GEMU_MON_STOP, 0);
+    } else if (!strcmp(line, "cont") || !strcmp(line, "c") ||
+               !strcmp(line, "resume") || !strcmp(line, "continue")) {
+        enqueue(mon, GEMU_MON_CONT, 0);
+    } else if ((strncmp(line, "step", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) ||
+               (line[0] == 's' && (line[1] == '\0' || line[1] == ' '))) {
+        char *p = line + (line[1] == 't' ? 4 : 1);
+        while (*p == ' ') p++;
+        uint32_t count = (*p != '\0') ? (uint32_t)strtoul(p, NULL, 10) : 1;
+        if (count == 0) count = 1;
+        enqueue(mon, GEMU_MON_STEP, count);
+    } else {
+        enqueue_text(mon, line);
+    }
+    return true;
+}
+
+static bool telnet_read_line(sock_t fd, char *line, size_t len) {
+    size_t n = 0;
+    while (n + 1 < len) {
+        unsigned char ch;
+        int r = recv(fd, (char *)&ch, 1, 0);
+        if (r <= 0) return false;
+        if (ch == 255) { /* Telnet IAC: discard command and optional argument. */
+            unsigned char cmd;
+            if (recv(fd, (char *)&cmd, 1, 0) <= 0) return false;
+            if (cmd >= 251 && cmd <= 254) {
+                unsigned char opt;
+                if (recv(fd, (char *)&opt, 1, 0) <= 0) return false;
+            }
+            continue;
+        }
+        if (ch == '\n') break;
+        if (ch == '\r') continue;
+        if (ch == 8 || ch == 127) {
+            if (n > 0) n--;
+            continue;
+        }
+        line[n++] = (char)ch;
+    }
+    line[n] = '\0';
+    return true;
+}
+
+static void monitor_stdio_loop(GemuMonitor *mon) {
+    char line[256];
+    while (mon->running) {
+        mon_printf(mon, "(gemu) ");
+        if (!fgets(line, sizeof(line), stdin)) break;
+        if (!monitor_handle_line(mon, line)) break;
+    }
+}
+
+static void monitor_telnet_loop(GemuMonitor *mon) {
+    while (mon->running) {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(mon->listen_fd, &rfds);
+        struct timeval tv = {1, 0};
+        int rc = select((int)mon->listen_fd + 1, &rfds, NULL, NULL, &tv);
+        if (rc <= 0) continue;
+
+        sock_t client = accept(mon->listen_fd, NULL, NULL);
+        if (client == INVALID_SOCK) continue;
+        mon->client_fd = client;
+        mon_printf(mon, "GEMU monitor\n");
+
+        char line[256];
+        bool quit_requested = false;
+        while (mon->running) {
+            mon_printf(mon, "(gemu) ");
+            if (!telnet_read_line(client, line, sizeof(line))) break;
+            if (!monitor_handle_line(mon, line)) {
+                quit_requested = true;
+                mon->running = false;
+                break;
+            }
+        }
+
+        sock_close(client);
+        mon->client_fd = INVALID_SOCK;
+        if (quit_requested) return;
+    }
+}
+
 static void *monitor_thread(void *arg) {
     GemuMonitor *mon = arg;
-    char line[256];
 
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 
-    while (mon->running) {
-        printf("(gemu) ");
-        fflush(stdout);
-
-        if (!fgets(line, sizeof(line), stdin)) break;
-
-        /* Trim trailing whitespace */
-        size_t len = strlen(line);
-        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' ||
-                           line[len-1] == ' '  || line[len-1] == '\t'))
-            line[--len] = '\0';
-
-        if (len == 0) continue;
-
-        if (!strcmp(line, "help") || !strcmp(line, "?")) {
-            printf(
-            "  change <device> <file> -- insert/change media\n"
-            "  cont / c -- resume emulation\n"
-            "  dipswitch -- lists DIP switches (when supported)\n"
-            "  dipswitch [name] [value] -- sets DIP switch (when supported)\n"
-            "  eject <device> -- eject media\n"
-            "  gamegenie add [code] -- add game genie code\n"
-            "  gamegenie list -- show active game genie codes\n"
-            "  gamegenie delete [code] -- deletes game genie code\n"
-            "  media -- list media devices\n"
-            "  q / quit -- quits the machine immediately\n"
-            "  reset -- reset the machine\n"
-            "  screendump <file>[.png] -- save screenshot (PPM or PNG)\n"
-            "  step / s [count] -- step through (x) instructions (defaults to 1)\n"
-            "  stop / halt -- halt emulation\n");
-        } else if (!strcmp(line, "reset") || !strcmp(line, "system_reset")) {
-            enqueue(mon, GEMU_MON_RESET, 0);
-        } else if (!strcmp(line, "q") || !strcmp(line, "quit")) {
-            enqueue(mon, GEMU_MON_QUIT, 0);
-            break;
-        } else if (!strcmp(line, "stop") || !strcmp(line, "halt")) {
-            enqueue(mon, GEMU_MON_STOP, 0);
-        } else if (!strcmp(line, "cont") || !strcmp(line, "c") ||
-                   !strcmp(line, "resume") || !strcmp(line, "continue")) {
-            enqueue(mon, GEMU_MON_CONT, 0);
-        } else if ((strncmp(line, "step", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) ||
-                   (line[0] == 's' && (line[1] == '\0' || line[1] == ' '))) {
-            char *p = line + (line[1] == 't' ? 4 : 1);
-            while (*p == ' ') p++;
-            uint32_t count = (*p != '\0') ? (uint32_t)strtoul(p, NULL, 10) : 1;
-            if (count == 0) count = 1;
-            enqueue(mon, GEMU_MON_STEP, count);
-        } else {
-            enqueue_text(mon, line);
-        }
-    }
+    if (mon->backend == MON_BACKEND_TELNET)
+        monitor_telnet_loop(mon);
+    else
+        monitor_stdio_loop(mon);
 
     return NULL;
 }
@@ -295,12 +543,17 @@ static void *monitor_thread(void *arg) {
 
 GemuMonitor *gemu_monitor_create(void) {
     GemuMonitor *mon = calloc(1, sizeof(*mon));
+    if (!mon) return NULL;
     pthread_mutex_init(&mon->lock, NULL);
+    mon->listen_fd = INVALID_SOCK;
+    mon->client_fd = INVALID_SOCK;
+    parse_monitor_spec(mon, default_monitor_spec);
     return mon;
 }
 
 void gemu_monitor_destroy(GemuMonitor *mon) {
     if (!mon) return;
+    gemu_monitor_stop(mon);
     pthread_mutex_destroy(&mon->lock);
     free(mon);
 }
@@ -322,17 +575,39 @@ bool gemu_monitor_register_media(GemuMonitor *mon,
 }
 
 void gemu_monitor_start(GemuMonitor *mon) {
-    if (!isatty(STDIN_FILENO)) return; /* no console, stay silent */
+    if (!mon || mon->backend == MON_BACKEND_NONE) return;
+    if (mon->backend == MON_BACKEND_STDIO && !isatty(STDIN_FILENO))
+        return; /* no console, stay silent */
+    if (mon->backend == MON_BACKEND_TELNET && !monitor_open_telnet(mon))
+        return;
     mon->running = true;
-    pthread_create(&mon->thread, NULL, monitor_thread, mon);
+    if (pthread_create(&mon->thread, NULL, monitor_thread, mon) == 0) {
+        mon->thread_started = true;
+    } else {
+        mon->running = false;
+        if (mon->listen_fd != INVALID_SOCK) {
+            sock_close(mon->listen_fd);
+            mon->listen_fd = INVALID_SOCK;
+        }
+    }
 }
 
 void gemu_monitor_stop(GemuMonitor *mon) {
-    if (!mon->running) return;
+    if (!mon || !mon->thread_started) return;
     mon->running = false;
+    if (mon->listen_fd != INVALID_SOCK) {
+        sock_close(mon->listen_fd);
+        mon->listen_fd = INVALID_SOCK;
+    }
+    if (mon->client_fd != INVALID_SOCK) {
+        sock_close(mon->client_fd);
+        mon->client_fd = INVALID_SOCK;
+    }
     pthread_cancel(mon->thread);
     pthread_join(mon->thread, NULL);
-    printf("\n"); /* tidy up any dangling prompt */
+    mon->thread_started = false;
+    if (mon->backend == MON_BACKEND_STDIO)
+        printf("\n"); /* tidy up any dangling prompt */
 }
 
 GemuMonCmd gemu_monitor_poll(GemuMonitor *mon) {
@@ -376,10 +651,10 @@ void gemu_monitor_unknown_command(const GemuMonitor *mon) {
         snprintf(buf, sizeof(buf), "%s", text);
         char *cmd = strtok(buf, " \t");
         if (cmd && strcasecmp(cmd, "dipswitch") == 0) {
-            printf("dipswitch: dip switches are not available on this machine\n");
+            mon_printf(mon, "dipswitch: dip switches are not available on this machine\n");
             return;
         }
-        printf("unknown command '%s' (try 'help')\n", text);
+        mon_printf(mon, "unknown command '%s' (try 'help')\n", text);
     }
 }
 

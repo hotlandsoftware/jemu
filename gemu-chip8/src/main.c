@@ -1,6 +1,7 @@
 #include "chip8.h"
 #include "gemu/gemu.h"
 #include "gemu/args.h"
+#include "gemu/monitor.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +68,7 @@ int main(int argc, char *argv[]) {
     char *rem[32]; int nrem = 0;
     if (!gemu_args_parse(argc, argv, &def, &args, &nrem, rem))
         return 1;
+    gemu_monitor_set_default(args.monitor_spec);
 
     /* Apply shared results */
     cfg.rom_path     = args.rom_path;

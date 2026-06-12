@@ -7,6 +7,7 @@
 #include "devices/vip_devices.h"
 #include "gemu/gemu.h"
 #include "gemu/args.h"
+#include "gemu/monitor.h"
 #include <SDL2/SDL.h>
 #include <sys/stat.h>
 #include <stdio.h>
@@ -177,6 +178,7 @@ int main(int argc, char *argv[]) {
     char *rem[32]; int nrem = 0;
     if (!gemu_args_parse(argc, argv, &def, &args, &nrem, rem))
         return 1;
+    gemu_monitor_set_default(args.monitor_spec);
 
     if (args.machine) {
         if      (strcmp(args.machine, "vip") == 0) cfg.machine = RCA_MACHINE_COSMAC_VIP;

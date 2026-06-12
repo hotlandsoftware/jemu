@@ -1,5 +1,22 @@
 The GEMU monitor is made to give commands to the GEMU emulator. It is designed to be as backwards compatible as possible with the QEMU emulator, with a couple of additional commands per emulator.
 
+# Selecting a monitor
+The monitor is enabled on stdio by default when stdin is an interactive
+terminal:
+
+> ``-monitor stdio``
+
+Uses stdin/stdout for the monitor prompt.
+
+> ``-monitor telnet:127.0.0.1:4444,server,nowait``
+
+Starts a telnet monitor server on the given host and port. One client can be
+connected at a time.
+
+> ``-monitor none``
+
+Disables the interactive monitor.
+
 # Commands
 The following commands are available:
 

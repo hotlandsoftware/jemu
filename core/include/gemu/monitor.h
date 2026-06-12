@@ -43,6 +43,10 @@ typedef struct GemuMediaDevice {
 GemuMonitor *gemu_monitor_create(void);
 void         gemu_monitor_destroy(GemuMonitor *mon);
 
+/* Set the process-wide default monitor transport used by subsequently-created
+ * monitors.  Supported forms: stdio, none, telnet:HOST:PORT,server,nowait. */
+void         gemu_monitor_set_default(const char *spec);
+
 /* Enqueue a reset or quit command from non-stdin sources (e.g. a GTK menu). */
 void         gemu_monitor_enqueue_reset(GemuMonitor *mon);
 void         gemu_monitor_enqueue_quit(GemuMonitor *mon);
