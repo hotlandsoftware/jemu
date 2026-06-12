@@ -387,22 +387,43 @@ static bool gg_decode(const char *code, uint16_t *addr, uint8_t *val,
         if (!p) return false;
         n[i] = (uint8_t)(p - gg_alpha);
     }
-    /* Standard NES Game Genie bit layout:
-     *   value  = n[0](hi) | n[1](lo)
-     *   addr   = n[3..5] supply bits 14:8, n[2..4] supply bits 7:0
-     *   compare (8-char only) = n[6](hi) | n[7](lo) */
+    /* NES Game Genie bit layout per nesgg.txt:
+     *   val[7]=n0[3]  val[6:4]=n1[2:0]  val[3]=n5[3](6ch)/n7[3](8ch)  val[2:0]=n0[2:0]
+     *   addr[14:12]=n3[2:0]  addr[11]=n4[3]   addr[10:8]=n5[2:0]
+     *   addr[7]=n1[3]  addr[6:4]=n2[2:0]  addr[3]=n3[3]  addr[2:0]=n4[2:0]
+     *   cmp[7]=n6[3]  cmp[6:4]=n7[2:0]  cmp[3]=n5[3]  cmp[2:0]=n6[2:0]  (8-char) */
     *addr = 0x8000u
         | ((uint16_t)(n[3] & 7u) << 12)
-        | ((uint16_t)(n[3] & 8u) <<  8)
+        | ((uint16_t)(n[4] & 8u) <<  8)
         | ((uint16_t)(n[5] & 7u) <<  8)
-        | ((uint16_t)(n[5] & 8u) <<  4)
+        | ((uint16_t)(n[1] & 8u) <<  4)
         | ((uint16_t)(n[2] & 7u) <<  4)
-        | ((uint16_t)(n[4] & 8u))
+        | ((uint16_t)(n[3] & 8u))
         | ((uint16_t)(n[4] & 7u));
-    *val     = (uint8_t)((n[0] << 4) | n[1]);
     *has_cmp = (len == 8);
-    *cmp     = *has_cmp ? (uint8_t)((n[6] << 4) | n[7]) : 0;
+    if (*has_cmp) {
+        *val = (uint8_t)(((n[0] & 8u) << 4) | ((n[1] & 7u) << 4) | (n[7] & 8u) | (n[0] & 7u));
+        *cmp = (uint8_t)(((n[6] & 8u) << 4) | ((n[7] & 7u) << 4) | (n[5] & 8u) | (n[6] & 7u));
+    } else {
+        *val = (uint8_t)(((n[0] & 8u) << 4) | ((n[1] & 7u) << 4) | (n[5] & 8u) | (n[0] & 7u));
+        *cmp = 0;
+    }
     return true;
+}
+
+static uint8_t nes_prg_direct(const NesState *s, uint16_t addr) {
+    if (addr < 0x8000 || !s->prg) return 0;
+    if (s->cart.mapper == 4) {
+        uint8_t slot = (uint8_t)((addr - 0x8000u) >> 13);
+        return s->prg[s->mmc3_prg_offsets[slot] + (addr & 0x1FFFu)];
+    }
+    if (s->cart.mapper >= 1) {
+        uint8_t slot = addr >= 0xC000 ? 1 : 0;
+        return s->prg[s->prg_offsets[slot] + (addr & 0x3FFF)];
+    }
+    uint32_t off = addr - 0x8000u;
+    if (s->cart.prg_banks == 1) off &= 0x3FFF;
+    return s->prg[off];
 }
 
 static void nes_gamegenie_cmd(NesState *s, const char *line) {
@@ -429,20 +450,30 @@ static void nes_gamegenie_cmd(NesState *s, const char *line) {
             printf("Active Game Genie patches:\n");
             for (int i = 0; i < s->gg_count; i++) {
                 NesGgPatch *g = &s->gg_patches[i];
-                if (g->has_cmp)
-                    printf("  %-8s  $%04X = $%02X  (if $%02X)\n", g->code, g->addr, g->val, g->cmp);
-                else
-                    printf("  %-8s  $%04X = $%02X\n", g->code, g->addr, g->val);
+                uint8_t actual = nes_prg_direct(s, g->addr);
+                if (g->has_cmp) {
+                    const char *status = (actual == g->cmp) ? "active" : "mismatch";
+                    printf("  %-8s  $%04X = $%02X  (if $%02X)  ROM=$%02X [%s]\n",
+                           g->code, g->addr, g->val, g->cmp, actual, status);
+                } else {
+                    printf("  %-8s  $%04X = $%02X  ROM=$%02X [active]\n",
+                           g->code, g->addr, g->val, actual);
+                }
             }
         } else {
             bool found = false;
             for (int i = 0; i < s->gg_count; i++) {
                 if (strcasecmp(s->gg_patches[i].code, arg) == 0) {
                     NesGgPatch *g = &s->gg_patches[i];
-                    if (g->has_cmp)
-                        printf("  %-8s  $%04X = $%02X  (if $%02X)\n", g->code, g->addr, g->val, g->cmp);
-                    else
-                        printf("  %-8s  $%04X = $%02X\n", g->code, g->addr, g->val);
+                    uint8_t actual = nes_prg_direct(s, g->addr);
+                    if (g->has_cmp) {
+                        const char *status = (actual == g->cmp) ? "active" : "mismatch";
+                        printf("  %-8s  $%04X = $%02X  (if $%02X)  ROM=$%02X [%s]\n",
+                               g->code, g->addr, g->val, g->cmp, actual, status);
+                    } else {
+                        printf("  %-8s  $%04X = $%02X  ROM=$%02X [active]\n",
+                               g->code, g->addr, g->val, actual);
+                    }
                     found = true; break;
                 }
             }
