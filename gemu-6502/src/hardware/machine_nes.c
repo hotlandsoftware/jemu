@@ -7,11 +7,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #ifdef _WIN32
 #  include <direct.h>
-#  define gemu_mkdir(p) _mkdir(p)
+#  define gemu_mkdir(p)   _mkdir(p)
+#  define strcasecmp      _stricmp
+#  define strncasecmp     _strnicmp
 #else
 #  include <sys/stat.h>
+#  include <strings.h>
 #  define gemu_mkdir(p) mkdir((p), 0755)
 #endif
 #ifdef GEMU_GTK
@@ -369,6 +373,126 @@ static void nes_chr_write(uint16_t addr, uint8_t val, void *ud) {
 
 /* ── CPU memory map ──────────────────────────────────────────────────────── */
 
+/* ── Game Genie ──────────────────────────────────────────────────────────── */
+
+static const char gg_alpha[] = "APZLGITYEOXUKSVN";
+
+static bool gg_decode(const char *code, uint16_t *addr, uint8_t *val,
+                      uint8_t *cmp, bool *has_cmp) {
+    int len = (int)strlen(code);
+    if (len != 6 && len != 8) return false;
+    uint8_t n[8] = {0};
+    for (int i = 0; i < len; i++) {
+        const char *p = strchr(gg_alpha, toupper((unsigned char)code[i]));
+        if (!p) return false;
+        n[i] = (uint8_t)(p - gg_alpha);
+    }
+    /* Standard NES Game Genie bit layout:
+     *   value  = n[0](hi) | n[1](lo)
+     *   addr   = n[3..5] supply bits 14:8, n[2..4] supply bits 7:0
+     *   compare (8-char only) = n[6](hi) | n[7](lo) */
+    *addr = 0x8000u
+        | ((uint16_t)(n[3] & 7u) << 12)
+        | ((uint16_t)(n[3] & 8u) <<  8)
+        | ((uint16_t)(n[5] & 7u) <<  8)
+        | ((uint16_t)(n[5] & 8u) <<  4)
+        | ((uint16_t)(n[2] & 7u) <<  4)
+        | ((uint16_t)(n[4] & 8u))
+        | ((uint16_t)(n[4] & 7u));
+    *val     = (uint8_t)((n[0] << 4) | n[1]);
+    *has_cmp = (len == 8);
+    *cmp     = *has_cmp ? (uint8_t)((n[6] << 4) | n[7]) : 0;
+    return true;
+}
+
+static void nes_gamegenie_cmd(NesState *s, const char *line) {
+    /* skip "gamegenie" */
+    while (*line && !isspace((unsigned char)*line)) line++;
+    while (*line && isspace((unsigned char)*line)) line++;
+
+    char sub[32] = {0};
+    int  si = 0;
+    while (*line && !isspace((unsigned char)*line) && si < 31)
+        sub[si++] = (char)tolower((unsigned char)*line++);
+    while (*line && isspace((unsigned char)*line)) line++;
+    const char *arg = line;
+    /* trim trailing whitespace from arg */
+    char argbuf[32] = {0};
+    snprintf(argbuf, sizeof(argbuf), "%s", arg);
+    for (int i = (int)strlen(argbuf) - 1; i >= 0 && isspace((unsigned char)argbuf[i]); i--)
+        argbuf[i] = '\0';
+    arg = argbuf;
+
+    if (strcmp(sub, "list") == 0) {
+        if (!*arg) {
+            if (s->gg_count == 0) { printf("gamegenie: no patches active\n"); return; }
+            printf("Active Game Genie patches:\n");
+            for (int i = 0; i < s->gg_count; i++) {
+                NesGgPatch *g = &s->gg_patches[i];
+                if (g->has_cmp)
+                    printf("  %-8s  $%04X = $%02X  (if $%02X)\n", g->code, g->addr, g->val, g->cmp);
+                else
+                    printf("  %-8s  $%04X = $%02X\n", g->code, g->addr, g->val);
+            }
+        } else {
+            bool found = false;
+            for (int i = 0; i < s->gg_count; i++) {
+                if (strcasecmp(s->gg_patches[i].code, arg) == 0) {
+                    NesGgPatch *g = &s->gg_patches[i];
+                    if (g->has_cmp)
+                        printf("  %-8s  $%04X = $%02X  (if $%02X)\n", g->code, g->addr, g->val, g->cmp);
+                    else
+                        printf("  %-8s  $%04X = $%02X\n", g->code, g->addr, g->val);
+                    found = true; break;
+                }
+            }
+            if (!found) printf("gamegenie: code '%s' not found\n", arg);
+        }
+        return;
+    }
+
+    if (strcmp(sub, "add") == 0) {
+        if (!*arg) { printf("usage: gamegenie add <code>\n"); return; }
+        if (s->gg_count >= NES_GG_MAX) {
+            printf("gamegenie: patch limit reached (%d max)\n", NES_GG_MAX); return;
+        }
+        for (int i = 0; i < s->gg_count; i++) {
+            if (strcasecmp(s->gg_patches[i].code, arg) == 0) {
+                printf("gamegenie: %s is already active\n", arg); return;
+            }
+        }
+        uint16_t paddr; uint8_t pval, pcmp; bool has_cmp;
+        if (!gg_decode(arg, &paddr, &pval, &pcmp, &has_cmp)) {
+            printf("gamegenie: invalid code '%s'\n", arg); return;
+        }
+        NesGgPatch *g = &s->gg_patches[s->gg_count++];
+        g->addr = paddr; g->val = pval; g->cmp = pcmp; g->has_cmp = has_cmp;
+        snprintf(g->code, sizeof(g->code), "%s", arg);
+        if (has_cmp)
+            printf("gamegenie: added %s → $%04X = $%02X (if $%02X)\n", arg, paddr, pval, pcmp);
+        else
+            printf("gamegenie: added %s → $%04X = $%02X\n", arg, paddr, pval);
+        return;
+    }
+
+    if (strcmp(sub, "delete") == 0 || strcmp(sub, "remove") == 0) {
+        if (!*arg) { printf("usage: gamegenie delete <code>\n"); return; }
+        for (int i = 0; i < s->gg_count; i++) {
+            if (strcasecmp(s->gg_patches[i].code, arg) == 0) {
+                memmove(&s->gg_patches[i], &s->gg_patches[i + 1],
+                        (size_t)(s->gg_count - i - 1) * sizeof(NesGgPatch));
+                s->gg_count--;
+                printf("gamegenie: removed %s\n", arg);
+                return;
+            }
+        }
+        printf("gamegenie: code '%s' not found\n", arg);
+        return;
+    }
+
+    printf("gamegenie add <code> | gamegenie list [code] | gamegenie delete <code>\n");
+}
+
 static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
     NesState *s = ud;
 
@@ -401,18 +525,25 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
 
     if (addr >= 0x8000) {
         if (!s->prg) return 0;
+        uint8_t rom;
         if (s->cart.mapper == 4) {
             uint8_t slot = (uint8_t)((addr - 0x8000u) >> 13);
-            return s->prg[s->mmc3_prg_offsets[slot] + (addr & 0x1FFFu)];
-        }
-        if (s->cart.mapper >= 1) {
+            rom = s->prg[s->mmc3_prg_offsets[slot] + (addr & 0x1FFFu)];
+        } else if (s->cart.mapper >= 1) {
             uint8_t slot = addr >= 0xC000 ? 1 : 0;
-            return s->prg[s->prg_offsets[slot] + (addr & 0x3FFF)];
+            rom = s->prg[s->prg_offsets[slot] + (addr & 0x3FFF)];
+        } else {
+            /* NROM: 1 bank → mirrored; 2 banks → direct 32 KB */
+            uint32_t off = addr - 0x8000u;
+            if (s->cart.prg_banks == 1) off &= 0x3FFF;
+            rom = s->prg[off];
         }
-        /* NROM: 1 bank → mirrored; 2 banks → direct 32 KB */
-        uint32_t off = addr - 0x8000u;
-        if (s->cart.prg_banks == 1) off &= 0x3FFF;
-        return s->prg[off];
+        for (int i = 0; i < s->gg_count; i++) {
+            if (s->gg_patches[i].addr == addr &&
+                (!s->gg_patches[i].has_cmp || rom == s->gg_patches[i].cmp))
+                return s->gg_patches[i].val;
+        }
+        return rom;
     }
 
     return 0;  /* open bus */
@@ -650,6 +781,7 @@ NesState *nes_create(const MosConfig *cfg) {
         s->display = nes_display_create(cfg->display_type, "GEMU",
                                         rp2c02_palette_rgb,
                                         cfg->display_scale,
+                                        cfg->display_renderer,
                                         s->monitor);
         if (!s->display)
             fprintf(stderr, "nes: failed to create display window\n");
@@ -713,7 +845,15 @@ void nes_run(NesState *s, const MosConfig *cfg) {
         while ((cmd = gemu_monitor_poll(s->monitor)) != GEMU_MON_NONE) {
             if      (cmd == GEMU_MON_QUIT)   { quit = true; break; }
             else if (cmd == GEMU_MON_RESET)  nes_reset(s);
-            else if (cmd == GEMU_MON_CUSTOM) gemu_monitor_unknown_command(s->monitor);
+            else if (cmd == GEMU_MON_CUSTOM) {
+                const char *text = gemu_monitor_command_text(s->monitor);
+                while (*text == ' ' || *text == '\t') text++;
+                if (strncasecmp(text, "gamegenie", 9) == 0 &&
+                    (text[9] == '\0' || text[9] == ' ' || text[9] == '\t'))
+                    nes_gamegenie_cmd(s, text);
+                else
+                    gemu_monitor_unknown_command(s->monitor);
+            }
         }
         if (quit) break;
 
@@ -750,7 +890,10 @@ void nes_run(NesState *s, const MosConfig *cfg) {
             apu2a03_flush(&s->apu);
 
             /* Render completed frame */
-            if (s->display)
+            if (nes_display_has_argb(s->display))
+                nes_display_render_argb(s->display, s->ppu.pixels_argb,
+                                        RP2C02_WIDTH, RP2C02_HEIGHT);
+            else if (s->display)
                 nes_display_render(s->display, s->ppu.pixels,
                                    RP2C02_WIDTH, RP2C02_HEIGHT);
             if (s->vnc)

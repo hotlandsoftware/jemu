@@ -311,8 +311,8 @@ static void load_sprite_shifters(Rp2c02 *ppu) {
         if (ppu->ppuctrl & PPUCTRL_SPR_8x16) {
             uint16_t base = (tile & 1) ? 0x1000u : 0x0000u;
             uint8_t  t    = tile & 0xFEu;
+            if (flip_v) row ^= 15;   /* flip full 16-row span, swaps tile halves */
             if (row >= 8) { row -= 8; t++; }
-            if (flip_v) row ^= 7;
             pt_addr = base | ((uint16_t)t << 4) | (uint8_t)row;
         } else {
             uint16_t base = (ppu->ppuctrl & PPUCTRL_SPR_PT) ? 0x1000u : 0x0000u;
@@ -441,8 +441,10 @@ void rp2c02_tick(Rp2c02 *ppu) {
 
     /* ── Pixel output ────────────────────────────────────────────────── */
     if (visible_sl && dot >= 1 && dot <= 256) {
+        size_t idx = (size_t)sl * RP2C02_WIDTH + (size_t)(dot - 1);
         uint8_t color = output_pixel(ppu, dot - 1);
-        ppu->pixels[sl * RP2C02_WIDTH + (dot - 1)] = color;
+        ppu->pixels[idx] = color;
+        ppu->pixels_argb[idx] = rp2c02_palette_rgb[color & 0x3F];
     }
 
     /* ── Mapper scanline IRQ ─────────────────────────────────────────── */

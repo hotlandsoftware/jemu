@@ -89,6 +89,7 @@ typedef struct Rp2c02 {
 
     /* ── Output framebuffer ───────────────────────────────────────────── */
     uint8_t  pixels[RP2C02_WIDTH * RP2C02_HEIGHT]; /* NES palette indices (0–63) */
+    uint32_t pixels_argb[RP2C02_WIDTH * RP2C02_HEIGHT]; /* host 0xAARRGGBB pixels */
     bool     dirty;         /* true when a new frame is complete */
 
     /* ── Mirroring ────────────────────────────────────────────────────── */

@@ -44,6 +44,7 @@ static const GemuArgsDef def = {
         "  -start ADDR        Override reset vector and start execution at ADDR\n"
         "\nNES options:\n"
         "  -cartridge FILE    Load an iNES (.nes) cartridge (requires -M nes)\n"
+        "  -renderer MODE     SDL renderer: auto | software | accelerated (default: auto)\n"
         "  -soundhw CHIP      Sound hardware: none | 2a03  (default: 2a03 for NES)\n"
         "  -device NAME       Attach a device to the next controller port (use -device ? to list)\n"
         "\nExample commands:\n"
@@ -87,6 +88,7 @@ int main(int argc, char *argv[]) {
         .cpu          = MOS_CPU_6502,
         .vga          = MOS_VGA_NONE,
         .display_type = GEMU_DISPLAY_NONE,
+        .display_renderer = GEMU_RENDERER_AUTO,
         .display_scale = 1,
     };
 
@@ -135,6 +137,22 @@ int main(int argc, char *argv[]) {
             cfg.has_start_addr = true;
         } else if (strcmp(rem[i], "-cartridge") == 0 && i + 1 < nrem) {
             cfg.cart_path = rem[++i];
+        } else if (strcmp(rem[i], "-renderer") == 0 && i + 1 < nrem) {
+            const char *mode = rem[++i];
+            if (strcmp(mode, "?") == 0) {
+                printf("Available SDL renderers:\n");
+                printf("  auto         Try accelerated rendering, fall back to software\n");
+                printf("  software     Force SDL software renderer\n");
+                printf("  accelerated  Require SDL accelerated renderer\n");
+                SDL_Quit(); return 0;
+            }
+            if      (strcmp(mode, "auto") == 0)        cfg.display_renderer = GEMU_RENDERER_AUTO;
+            else if (strcmp(mode, "software") == 0)    cfg.display_renderer = GEMU_RENDERER_SOFTWARE;
+            else if (strcmp(mode, "accelerated") == 0) cfg.display_renderer = GEMU_RENDERER_ACCELERATED;
+            else {
+                fprintf(stderr, "gemu-6502: unknown -renderer '%s' (use -renderer ? to list)\n", mode);
+                return 1;
+            }
         } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
             const char *name = rem[++i];
             if (strcmp(name, "?") == 0) {

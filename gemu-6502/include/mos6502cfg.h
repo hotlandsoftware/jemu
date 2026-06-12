@@ -44,6 +44,7 @@ typedef struct MosConfig {
     MosCpuType      cpu;
     MosVgaType      vga;
     GemuDisplayType display_type;
+    GemuRendererType display_renderer;
     int             display_scale;
     const char     *vnc_addr;
     bool            has_start_addr;

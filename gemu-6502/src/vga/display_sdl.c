@@ -1,6 +1,7 @@
 #include "nes_display.h"
 #include "../hardware/nes.h"
 #include <SDL2/SDL.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,8 +11,10 @@ typedef struct {
     SDL_Window     *window;
     SDL_Renderer   *renderer;
     SDL_Texture    *texture;
+    uint32_t       *frame_argb;
     const uint32_t *palette;
     int             scale;
+    bool            software;
     bool            quit;
     uint8_t         ctrl1;
 } NesDisplaySdlCtx;
@@ -33,13 +36,18 @@ static uint8_t sdl_key_to_btn(SDL_Keycode key) {
 
 static void sdl_render(void *vctx, const uint8_t *pixels, int w, int h) {
     NesDisplaySdlCtx *c = vctx;
-    void *raw; int pitch;
-    SDL_LockTexture(c->texture, NULL, &raw, &pitch);
-    uint32_t *out = raw;
-    for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-            out[y * (pitch / 4) + x] = c->palette[pixels[y * w + x] & 0x3F];
-    SDL_UnlockTexture(c->texture);
+    for (int i = 0; i < w * h; i++)
+        c->frame_argb[i] = c->palette[pixels[i] & 0x3F];
+    SDL_UpdateTexture(c->texture, NULL, c->frame_argb, w * (int)sizeof(uint32_t));
+    SDL_RenderClear(c->renderer);
+    SDL_RenderCopy(c->renderer, c->texture, NULL, NULL);
+    SDL_RenderPresent(c->renderer);
+}
+
+static void sdl_render_argb(void *vctx, const uint32_t *pixels, int w, int h) {
+    NesDisplaySdlCtx *c = vctx;
+    (void)h;
+    SDL_UpdateTexture(c->texture, NULL, pixels, w * (int)sizeof(uint32_t));
     SDL_RenderClear(c->renderer);
     SDL_RenderCopy(c->renderer, c->texture, NULL, NULL);
     SDL_RenderPresent(c->renderer);
@@ -67,6 +75,7 @@ static void sdl_destroy(void *vctx) {
     if (c->renderer) SDL_DestroyRenderer(c->renderer);
     if (c->window)   SDL_DestroyWindow(c->window);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    free(c->frame_argb);
     free(c);
 }
 
@@ -74,7 +83,8 @@ static bool    sdl_should_quit(void *vctx) { return ((NesDisplaySdlCtx *)vctx)->
 static uint8_t sdl_ctrl1(void *vctx)       { return ((NesDisplaySdlCtx *)vctx)->ctrl1; }
 
 NesDisplay *nes_display_sdl_create(const char *title,
-                                   const uint32_t *palette, int scale) {
+                                   const uint32_t *palette, int scale,
+                                   GemuRendererType renderer_mode) {
     if (scale <= 0) scale = NES_SDL_DEFAULT_SCALE;
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) return NULL;
 
@@ -82,6 +92,8 @@ NesDisplay *nes_display_sdl_create(const char *title,
     if (!c) { SDL_QuitSubSystem(SDL_INIT_VIDEO); return NULL; }
     c->palette = palette;
     c->scale   = scale;
+    c->frame_argb = malloc((size_t)256 * 240 * sizeof(*c->frame_argb));
+    if (!c->frame_argb) goto fail;
 
     c->window = SDL_CreateWindow(
         title ? title : "gemu-6502 NES",
@@ -90,23 +102,31 @@ NesDisplay *nes_display_sdl_create(const char *title,
         SDL_WINDOW_SHOWN);
     if (!c->window) goto fail;
 
-    c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_ACCELERATED);
-    if (!c->renderer)
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+
+    if (renderer_mode == GEMU_RENDERER_SOFTWARE) {
+        c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_SOFTWARE);
+    } else {
+        c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_ACCELERATED);
+    }
+    if (!c->renderer && renderer_mode == GEMU_RENDERER_AUTO)
         c->renderer = SDL_CreateRenderer(c->window, -1, SDL_RENDERER_SOFTWARE);
     if (!c->renderer) goto fail;
 
     {
         SDL_RendererInfo info;
-        if (SDL_GetRendererInfo(c->renderer, &info) == 0 &&
-            (info.flags & SDL_RENDERER_SOFTWARE)) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                "No 3D acceleration",
-                "No 3D acceleration found. Performance and accuracy may suffer.",
-                c->window);
+        if (SDL_GetRendererInfo(c->renderer, &info) == 0) {
+            c->software = (info.flags & SDL_RENDERER_SOFTWARE) != 0;
+            if (c->software) {
+                const char *why = renderer_mode == GEMU_RENDERER_SOFTWARE
+                    ? "forced" : "auto-detected";
+                fprintf(stderr, "nes: using SDL software renderer (%s: %s)\n",
+                        why, info.name ? info.name : "unknown");
+            }
         }
     }
 
-    SDL_RenderSetLogicalSize(c->renderer, 256 * scale, 240 * scale);
+    SDL_RenderSetLogicalSize(c->renderer, 256, 240);
 
     c->texture = SDL_CreateTexture(
         c->renderer, SDL_PIXELFORMAT_ARGB8888,
@@ -120,6 +140,7 @@ NesDisplay *nes_display_sdl_create(const char *title,
     NesDisplay *d = calloc(1, sizeof(*d));
     if (!d) goto fail;
     d->render      = sdl_render;
+    d->render_argb = sdl_render_argb;
     d->poll        = sdl_poll;
     d->destroy     = sdl_destroy;
     d->should_quit = sdl_should_quit;
@@ -134,13 +155,14 @@ fail:
 
 NesDisplay *nes_display_create(GemuDisplayType type, const char *title,
                                const uint32_t *palette, int scale,
-                               GemuMonitor *mon) {
+                               GemuRendererType renderer, GemuMonitor *mon) {
     switch (type) {
     case GEMU_DISPLAY_SDL:
         (void)mon;
-        return nes_display_sdl_create(title, palette, scale);
+        return nes_display_sdl_create(title, palette, scale, renderer);
 #ifdef GEMU_GTK
     case GEMU_DISPLAY_GTK:
+        (void)renderer;
         return nes_display_gtk_create(title, palette, scale, mon);
 #endif
     default:

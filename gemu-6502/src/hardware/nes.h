@@ -19,6 +19,16 @@
 #define NES_BTN_LEFT   0x40u
 #define NES_BTN_RIGHT  0x80u
 
+#define NES_GG_MAX 16
+
+typedef struct {
+    uint16_t addr;
+    uint8_t  val;
+    uint8_t  cmp;
+    bool     has_cmp;
+    char     code[9]; /* 6- or 8-char code + NUL */
+} NesGgPatch;
+
 typedef struct {
     uint8_t  prg_banks;   /* × 16 KB */
     uint8_t  chr_banks;   /* × 8 KB  (0 = CHR RAM) */
@@ -79,6 +89,10 @@ typedef struct NesState {
     NesDisplay    *display;  /* SDL window (NULL if headless) */
     GemuVncServer *vnc;
     GemuMonitor   *monitor;
+
+    /* Game Genie patches */
+    NesGgPatch gg_patches[NES_GG_MAX];
+    int        gg_count;
 } NesState;
 
 NesState *nes_create (const MosConfig *cfg);
