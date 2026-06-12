@@ -40,6 +40,8 @@ struct GemuMonitor {
     uint32_t        last_step_count;
     GemuMediaDevice media[MEDIA_DEVICE_MAX];
     int             n_media;
+    bool          (*screendump_cb)(void *ud, const char *path);
+    void           *screendump_ud;
 };
 
 /* ── Media helpers ───────────────────────────────────────────────────────── */
@@ -103,6 +105,19 @@ static bool dispatch_media(GemuMonitor *mon, const char *line,
     char *p = buf;
     char *verb = next_token(&p);
     if (!verb) return false;
+
+    if (strcasecmp(verb, "screendump") == 0) {
+        char *arg = unquote_arg(p);
+        if (!*arg) {
+            printf("usage: screendump <filename>[.png]\n");
+        } else if (!mon->screendump_cb) {
+            printf("screendump: not supported by this machine\n");
+        } else {
+            mon->screendump_cb(mon->screendump_ud, arg);
+        }
+        *out_cmd = GEMU_MON_NONE;
+        return true;
+    }
 
     if (strcasecmp(verb, "media") == 0) {
         list_media(mon);
@@ -241,12 +256,13 @@ static void *monitor_thread(void *arg) {
             "  cont / c -- resume emulation\n"
             "  dipswitch -- lists DIP switches (when supported)\n"
             "  dipswitch [name] [value] -- sets DIP switch (when supported)\n"
+            "  eject <device> -- eject media\n"
             "  media -- list media devices\n"
             "  q / quit -- quits the machine immediately\n"
             "  reset -- reset the machine\n"
+            "  screendump <file>[.png] -- save screenshot (PPM or PNG)\n"
             "  step / s [count] -- step through (x) instructions (defaults to 1)\n"
-            "  stop / halt -- halt emulation\n"
-            "  eject <device> -- eject media\n");
+            "  stop / halt -- halt emulation\n");
         } else if (!strcmp(line, "reset") || !strcmp(line, "system_reset")) {
             enqueue(mon, GEMU_MON_RESET, 0);
         } else if (!strcmp(line, "q") || !strcmp(line, "quit")) {
@@ -366,4 +382,12 @@ void gemu_monitor_unknown_command(const GemuMonitor *mon) {
 
 bool gemu_monitor_is_paused(const GemuMonitor *mon) {
     return mon && mon->paused;
+}
+
+void gemu_monitor_set_screendump_cb(GemuMonitor *mon,
+                                    bool (*cb)(void *ud, const char *path),
+                                    void *ud) {
+    if (!mon) return;
+    mon->screendump_cb = cb;
+    mon->screendump_ud = ud;
 }

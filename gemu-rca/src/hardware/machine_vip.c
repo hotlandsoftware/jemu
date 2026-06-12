@@ -2,6 +2,7 @@
 #include "devices/vip_devices.h"
 #include "gemu/gemu.h"
 #include "gemu/memory.h"
+#include "gemu/screendump.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <string.h>
@@ -355,6 +356,26 @@ static void vip_poll_display(RcaVipState *s, const RcaConfig *cfg,
     }
 }
 
+static bool vip_screendump(void *ud, const char *path) {
+    RcaVipState *s = ud;
+    const uint8_t *buf;
+    int w, h;
+    if (s->cfg->vga == RCA_VGA_CDP1869) {
+        buf = s->vis.bitmap; w = CDP1869_VISIBLE_W; h = CDP1869_VISIBLE_H;
+    } else {
+        buf = s->vram;       w = CDP1861_DISPLAY_W; h = CDP1861_DISPLAY_H;
+    }
+    uint8_t *rgb = malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return false;
+    for (int i = 0; i < w * h; i++) {
+        uint8_t v = buf[i] ? 0xFF : 0x00;
+        rgb[i*3+0] = v; rgb[i*3+1] = v; rgb[i*3+2] = v;
+    }
+    bool ok = gemu_screendump(path, rgb, w, h);
+    free(rgb);
+    return ok;
+}
+
 RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     RcaVipState *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -372,6 +393,7 @@ RcaVipState *rca_vip_create(const RcaConfig *cfg) {
     s->cpu.panic_ud = s;
 
     s->monitor = gemu_monitor_create();
+    gemu_monitor_set_screendump_cb(s->monitor, vip_screendump, s);
     gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
         .name   = "tape",
         .kind   = "tape",

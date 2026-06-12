@@ -23,7 +23,8 @@ CORE_SRC := \
 	core/src/monitor.c \
 	core/src/vnc.c \
 	core/src/args.c \
-	core/src/sha256.c
+	core/src/sha256.c \
+	core/src/screendump.c
 
 CHIP8_SRC := \
 	gemu-chip8/src/main.c \
@@ -68,7 +69,8 @@ RCA_CORE_SRC := \
 	core/src/args.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
-	core/src/sha256.c
+	core/src/sha256.c \
+	core/src/screendump.c
 
 RCA_SRC := \
 	gemu-rca/src/main.c \
@@ -149,7 +151,8 @@ MOS_CORE_SRC := \
 	core/src/args.c \
 	core/src/monitor.c \
 	core/src/vnc.c \
-	core/src/sha256.c
+	core/src/sha256.c \
+	core/src/screendump.c
 
 MOS_SRC := \
 	gemu-6502/src/main.c \

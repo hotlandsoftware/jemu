@@ -1,6 +1,7 @@
 #include "destroyer.h"
 #include "devices/pcspk.h"
 #include "gemu/memory.h"
+#include "gemu/screendump.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -377,6 +378,22 @@ static void destroyer_default_inputs(RcaDestroyerState *s) {
     s->coin2_latch = 0;
 }
 
+static bool destroyer_screendump(void *ud, const char *path) {
+    RcaDestroyerState *s = ud;
+    const uint8_t *buf = (s->cfg->vga == RCA_VGA_CDP1869)
+                         ? s->rotated_bitmap : s->vis.bitmap;
+    int w = CDP1869_VISIBLE_W, h = CDP1869_VISIBLE_H;
+    uint8_t *rgb = malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return false;
+    for (int i = 0; i < w * h; i++) {
+        uint8_t v = buf[i] ? 0xFF : 0x00;
+        rgb[i*3+0] = v; rgb[i*3+1] = v; rgb[i*3+2] = v;
+    }
+    bool ok = gemu_screendump(path, rgb, w, h);
+    free(rgb);
+    return ok;
+}
+
 RcaDestroyerState *rca_destroyer_create(const RcaConfig *cfg) {
     RcaDestroyerState *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -401,6 +418,7 @@ RcaDestroyerState *rca_destroyer_create(const RcaConfig *cfg) {
         s->speaker = rca_pcspk_create(440u);
 
     s->monitor = gemu_monitor_create();
+    gemu_monitor_set_screendump_cb(s->monitor, destroyer_screendump, s);
     if (cfg->vnc_addr) {
         int w = (cfg->vga == RCA_VGA_CDP1869) ? DESTROYER_ROTATED_W : CDP1861_DISPLAY_W;
         int h = (cfg->vga == RCA_VGA_CDP1869) ? DESTROYER_ROTATED_H : CDP1861_DISPLAY_H;

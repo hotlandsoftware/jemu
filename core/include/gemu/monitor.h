@@ -63,3 +63,10 @@ const char  *gemu_monitor_command_text(const GemuMonitor *mon);
 void         gemu_monitor_unknown_command(const GemuMonitor *mon);
 
 bool         gemu_monitor_is_paused(const GemuMonitor *mon);
+
+/* Register a screendump callback.  The callback receives the output path and
+ * is responsible for capturing the current framebuffer and writing the file.
+ * Use gemu_screendump() from <gemu/screendump.h> for the actual I/O. */
+void gemu_monitor_set_screendump_cb(GemuMonitor *mon,
+                                    bool (*cb)(void *ud, const char *path),
+                                    void *ud);

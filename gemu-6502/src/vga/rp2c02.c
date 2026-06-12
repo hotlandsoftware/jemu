@@ -230,7 +230,7 @@ static uint8_t fetch_attr(Rp2c02 *ppu) {
         | ((ppu->v >> 2) & 0x07u);
     uint8_t at = ppu_bus_rd(ppu, at_addr);
     /* Select the 2-bit field for this tile */
-    uint8_t shift = (uint8_t)(((ppu->v >> 4) & 4u) | ((ppu->v >> 1) & 2u));
+    uint8_t shift = (uint8_t)(((ppu->v >> 4) & 4u) | (ppu->v & 2u));
     return (at >> shift) & 3;
 }
 
@@ -444,6 +444,10 @@ void rp2c02_tick(Rp2c02 *ppu) {
         uint8_t color = output_pixel(ppu, dot - 1);
         ppu->pixels[sl * RP2C02_WIDTH + (dot - 1)] = color;
     }
+
+    /* ── Mapper scanline IRQ ─────────────────────────────────────────── */
+    if (dot == 260 && active_sl && rendering && ppu->irq_scanline)
+        ppu->irq_scanline(ppu->irq_ud);
 
     /* ── Advance timing ──────────────────────────────────────────────── */
     ppu->dot++;

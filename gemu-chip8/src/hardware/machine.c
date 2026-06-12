@@ -3,6 +3,7 @@
 #endif
 #include "chip8.h"
 #include "gemu/memory.h"
+#include "gemu/screendump.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,12 +40,27 @@ static const uint8_t chip8_font[CHIP8_FONT_BYTES] = {
     0xF0, 0x80, 0xF0, 0x80, 0x80, /* F */
 };
 
+static bool chip8_screendump(void *ud, const char *path) {
+    Chip8State *s = ud;
+    int w = CHIP8_DISPLAY_W, h = CHIP8_DISPLAY_H;
+    uint8_t *rgb = malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return false;
+    for (int i = 0; i < w * h; i++) {
+        uint8_t v  = s->vram[i] ? 0xFF : 0x00;
+        rgb[i*3+0] = v; rgb[i*3+1] = v; rgb[i*3+2] = v;
+    }
+    bool ok = gemu_screendump(path, rgb, w, h);
+    free(rgb);
+    return ok;
+}
+
 Chip8State *chip8_machine_create(const Chip8Config *cfg) {
     Chip8State *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
 
     s->PC      = CHIP8_ROM_BASE;
     s->monitor = gemu_monitor_create();
+    gemu_monitor_set_screendump_cb(s->monitor, chip8_screendump, s);
     gemu_tb_cache_init(&s->tb_cache, free);
     if (cfg->vnc_addr)
         s->vnc = gemu_vnc_create(cfg->vnc_addr,

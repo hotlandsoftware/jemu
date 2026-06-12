@@ -49,7 +49,17 @@ typedef struct NesState {
     uint8_t  mmc1_prg;           /* internal register: $E000–$FFFF */
     uint32_t prg_offsets[2];     /* byte offsets into prg[]: [0]=$8000, [1]=$C000 */
     uint32_t chr_offsets[2];     /* byte offsets into chr[]: [0]=PPU$0000, [1]=PPU$1000 */
-    uint8_t  prg_ram[0x2000];    /* 8 KB SRAM at $6000–$7FFF */
+    uint8_t  prg_ram[0x2000];    /* 8 KB SRAM at $6000–$7FFF (shared mapper 1/4) */
+
+    /* Mapper 4 (MMC3/TxROM) */
+    uint8_t  mmc3_bank_sel;       /* bank select: bits[2:0]=target, [6]=PRG mode, [7]=CHR inv */
+    uint8_t  mmc3_regs[8];        /* R0–R7 */
+    uint8_t  mmc3_irq_latch;      /* reload value for IRQ counter */
+    uint8_t  mmc3_irq_counter;    /* scanline IRQ counter */
+    bool     mmc3_irq_reload;     /* counter reloads from latch on next clock */
+    bool     mmc3_irq_enabled;
+    uint32_t mmc3_prg_offsets[4]; /* 4× 8KB windows: $8000, $A000, $C000, $E000 */
+    uint32_t mmc3_chr_offsets[8]; /* 8× 1KB windows: PPU $0000–$1FFF */
 
     Apu2a03  apu;
 

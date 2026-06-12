@@ -2,6 +2,7 @@
 #include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
 #include "gemu/memory.h"
+#include "gemu/screendump.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,8 +146,11 @@ static bool ines_load(NesState *s, const char *path) {
     else if (vertical)    s->cart.mirror = RP2C02_MIRROR_VERTICAL;
     else                  s->cart.mirror = RP2C02_MIRROR_HORIZONTAL;
 
-    if (s->cart.mapper > 2) {
-        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2 only)\n", s->cart.mapper);
+    switch (s->cart.mapper) {
+    case 0: case 1: case 2: case 4: break;
+    default:
+        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2, MMC3/4)\n",
+                s->cart.mapper);
         fclose(f); return false;
     }
     if (s->cart.prg_banks == 0) {
@@ -257,11 +261,93 @@ static void mmc1_serial_write(NesState *s, uint16_t addr, uint8_t val) {
     mmc1_update_banks(s);
 }
 
+/* ── Mapper 4 (MMC3/TxROM) ───────────────────────────────────────────────── */
+
+static void mmc3_update_banks(NesState *s) {
+    uint32_t prg_8k   = (uint32_t)s->cart.prg_banks * 2;   /* total 8 KB banks */
+    uint32_t chr_1k   = (uint32_t)s->cart.chr_banks * 8;   /* total 1 KB banks */
+
+    /* PRG: four 8 KB windows at $8000, $A000, $C000, $E000 */
+    uint8_t  prg_mode = (s->mmc3_bank_sel >> 6) & 1;
+    uint32_t r6 = (s->mmc3_regs[6] % prg_8k) * 0x2000u;
+    uint32_t r7 = (s->mmc3_regs[7] % prg_8k) * 0x2000u;
+    uint32_t f0 = (prg_8k - 2) * 0x2000u;   /* second-to-last fixed bank */
+    uint32_t f1 = (prg_8k - 1) * 0x2000u;   /* last fixed bank */
+
+    if (!prg_mode) {
+        s->mmc3_prg_offsets[0] = r6;  s->mmc3_prg_offsets[1] = r7;
+        s->mmc3_prg_offsets[2] = f0;  s->mmc3_prg_offsets[3] = f1;
+    } else {
+        s->mmc3_prg_offsets[0] = f0;  s->mmc3_prg_offsets[1] = r7;
+        s->mmc3_prg_offsets[2] = r6;  s->mmc3_prg_offsets[3] = f1;
+    }
+
+    /* CHR: eight 1 KB windows at PPU $0000–$1FFF.
+     * R0/R1 select 2 KB pairs (bit 0 ignored); R2–R5 select 1 KB banks.
+     * CHR-invert bit swaps which half gets the 2 KB banks. */
+    if (s->chr_is_ram || chr_1k == 0) return;
+
+    uint8_t inv = (s->mmc3_bank_sel >> 7) & 1;
+    uint32_t c[8];
+    c[0] = ((s->mmc3_regs[0] & 0xFEu)      % chr_1k) * 0x400u;
+    c[1] = (((s->mmc3_regs[0] & 0xFEu) + 1) % chr_1k) * 0x400u;
+    c[2] = ((s->mmc3_regs[1] & 0xFEu)      % chr_1k) * 0x400u;
+    c[3] = (((s->mmc3_regs[1] & 0xFEu) + 1) % chr_1k) * 0x400u;
+    c[4] = (s->mmc3_regs[2] % chr_1k) * 0x400u;
+    c[5] = (s->mmc3_regs[3] % chr_1k) * 0x400u;
+    c[6] = (s->mmc3_regs[4] % chr_1k) * 0x400u;
+    c[7] = (s->mmc3_regs[5] % chr_1k) * 0x400u;
+
+    if (!inv) {
+        /* 2 KB at $0000, 2 KB at $0800, 1 KB×4 at $1000–$1FFF */
+        for (int i = 0; i < 4; i++) s->mmc3_chr_offsets[i]   = c[i];
+        for (int i = 0; i < 4; i++) s->mmc3_chr_offsets[i+4] = c[i+4];
+    } else {
+        /* 1 KB×4 at $0000–$0FFF, 2 KB at $1000, 2 KB at $1800 */
+        for (int i = 0; i < 4; i++) s->mmc3_chr_offsets[i]   = c[i+4];
+        for (int i = 0; i < 4; i++) s->mmc3_chr_offsets[i+4] = c[i];
+    }
+}
+
+static void mmc3_cpu_write(NesState *s, uint16_t addr, uint8_t val) {
+    bool odd = (addr & 1) != 0;
+    if (addr < 0xA000) {
+        if (!odd) { s->mmc3_bank_sel = val; }
+        else      { s->mmc3_regs[s->mmc3_bank_sel & 7] = val; mmc3_update_banks(s); }
+    } else if (addr < 0xC000) {
+        if (!odd && s->cart.mirror != RP2C02_MIRROR_4SCREEN)
+            s->ppu.mirror = (val & 1) ? RP2C02_MIRROR_HORIZONTAL : RP2C02_MIRROR_VERTICAL;
+        /* $A001 PRG-RAM protect: ignored */
+    } else if (addr < 0xE000) {
+        if (!odd) { s->mmc3_irq_latch = val; }
+        else      { s->mmc3_irq_reload = true; s->mmc3_irq_counter = 0; }
+    } else {
+        if (!odd) { s->mmc3_irq_enabled = false; s->cpu.irq = false; }
+        else      { s->mmc3_irq_enabled = true; }
+    }
+}
+
+static void mmc3_irq_scanline(void *ud) {
+    NesState *s = ud;
+    if (s->mmc3_irq_reload || s->mmc3_irq_counter == 0) {
+        s->mmc3_irq_counter = s->mmc3_irq_latch;
+        s->mmc3_irq_reload  = false;
+    } else {
+        s->mmc3_irq_counter--;
+    }
+    if (s->mmc3_irq_counter == 0 && s->mmc3_irq_enabled)
+        s->cpu.irq = true;
+}
+
 /* ── CHR bus callbacks (PPU address space 0x0000–0x1FFF) ─────────────────── */
 
 static uint8_t nes_chr_read(uint16_t addr, void *ud) {
     NesState *s = ud;
     if (!s->chr) return 0;
+    if (s->cart.mapper == 4) {
+        if (s->chr_is_ram) return s->chr[addr & 0x1FFF];
+        return s->chr[s->mmc3_chr_offsets[addr >> 10] + (addr & 0x3FF)];
+    }
     if (s->cart.mapper >= 1) {
         uint8_t slot = addr >= 0x1000 ? 1 : 0;
         return s->chr[s->chr_offsets[slot] + (addr & 0x0FFF)];
@@ -272,6 +358,7 @@ static uint8_t nes_chr_read(uint16_t addr, void *ud) {
 static void nes_chr_write(uint16_t addr, uint8_t val, void *ud) {
     NesState *s = ud;
     if (!s->chr_is_ram) return;
+    if (s->cart.mapper == 4) { s->chr[addr & 0x1FFF] = val; return; }
     if (s->cart.mapper >= 1) {
         uint8_t slot = addr >= 0x1000 ? 1 : 0;
         s->chr[s->chr_offsets[slot] + (addr & 0x0FFF)] = val;
@@ -307,13 +394,17 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
     }
 
     if (addr >= 0x6000 && addr < 0x8000) {
-        if (s->cart.mapper == 1 && !(s->mmc1_prg & 0x10))
+        if ((s->cart.mapper == 1 && !(s->mmc1_prg & 0x10)) || s->cart.mapper == 4)
             return s->prg_ram[addr & 0x1FFF];
         return 0;
     }
 
     if (addr >= 0x8000) {
         if (!s->prg) return 0;
+        if (s->cart.mapper == 4) {
+            uint8_t slot = (uint8_t)((addr - 0x8000u) >> 13);
+            return s->prg[s->mmc3_prg_offsets[slot] + (addr & 0x1FFFu)];
+        }
         if (s->cart.mapper >= 1) {
             uint8_t slot = addr >= 0xC000 ? 1 : 0;
             return s->prg[s->prg_offsets[slot] + (addr & 0x3FFF)];
@@ -362,16 +453,15 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
     }
 
     if (addr >= 0x6000 && addr < 0x8000) {
-        if (s->cart.mapper == 1 && !(s->mmc1_prg & 0x10))
+        if ((s->cart.mapper == 1 && !(s->mmc1_prg & 0x10)) || s->cart.mapper == 4)
             s->prg_ram[addr & 0x1FFF] = val;
         return;
     }
 
     if (addr >= 0x8000) {
-        if (s->cart.mapper == 1)
-            mmc1_serial_write(s, addr, val);
-        else if (s->cart.mapper == 2)
-            s->prg_offsets[0] = ((uint32_t)(val % s->cart.prg_banks)) * 0x4000u;
+        if      (s->cart.mapper == 1) mmc1_serial_write(s, addr, val);
+        else if (s->cart.mapper == 2) s->prg_offsets[0] = ((uint32_t)(val % s->cart.prg_banks)) * 0x4000u;
+        else if (s->cart.mapper == 4) mmc3_cpu_write(s, addr, val);
     }
 }
 
@@ -459,6 +549,24 @@ static void nes_handle_keys(NesState *s) {
     }
 }
 
+/* ── Screendump ──────────────────────────────────────────────────────────── */
+
+static bool nes_screendump(void *ud, const char *path) {
+    NesState *s = ud;
+    int w = RP2C02_WIDTH, h = RP2C02_HEIGHT;
+    uint8_t *rgb = malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return false;
+    for (int i = 0; i < w * h; i++) {
+        uint32_t c    = rp2c02_palette_rgb[s->ppu.pixels[i] & 0x3F];
+        rgb[i*3+0]    = (uint8_t)(c >> 16);
+        rgb[i*3+1]    = (uint8_t)(c >>  8);
+        rgb[i*3+2]    = (uint8_t)(c      );
+    }
+    bool ok = gemu_screendump(path, rgb, w, h);
+    free(rgb);
+    return ok;
+}
+
 /* ── Machine lifecycle ───────────────────────────────────────────────────── */
 
 static void nes_reset(NesState *s) {
@@ -479,6 +587,15 @@ static void nes_reset(NesState *s) {
         s->prg_offsets[1] = (uint32_t)(s->cart.prg_banks - 1) * 0x4000u;
         s->chr_offsets[0] = 0;
         s->chr_offsets[1] = 0x1000u;
+    } else if (s->cart.mapper == 4) {
+        memset(s->mmc3_regs, 0, sizeof(s->mmc3_regs));
+        s->mmc3_bank_sel    = 0;
+        s->mmc3_irq_latch   = 0;
+        s->mmc3_irq_counter = 0;
+        s->mmc3_irq_reload  = false;
+        s->mmc3_irq_enabled = false;
+        s->cpu.irq          = false;
+        mmc3_update_banks(s);
     }
 }
 
@@ -518,6 +635,7 @@ NesState *nes_create(const MosConfig *cfg) {
     }
 
     s->monitor = gemu_monitor_create();
+    gemu_monitor_set_screendump_cb(s->monitor, nes_screendump, s);
     gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
         .name   = "cartridge",
         .kind   = "cartridge",
@@ -538,6 +656,11 @@ NesState *nes_create(const MosConfig *cfg) {
     }
 
     nes_battery_setup(s);
+
+    if (s->cart.mapper == 4) {
+        s->ppu.irq_scanline = mmc3_irq_scanline;
+        s->ppu.irq_ud       = s;
+    }
 
     if (cfg->vnc_addr) {
         s->vnc = gemu_vnc_create(cfg->vnc_addr, RP2C02_WIDTH, RP2C02_HEIGHT);

@@ -98,6 +98,10 @@ typedef struct Rp2c02 {
     uint8_t (*chr_read) (uint16_t addr, void *ud);
     void    (*chr_write)(uint16_t addr, uint8_t val, void *ud);
     void    *chr_ud;
+
+    /* ── Mapper scanline IRQ hook (MMC3 etc.) ──────────────────────────── */
+    void (*irq_scanline)(void *ud); /* fired at dot 260 of each rendered scanline */
+    void *irq_ud;
 } Rp2c02;
 
 /* NES hardware palette: 64 entries → 0xAARRGGBB (AA=0xFF always) */

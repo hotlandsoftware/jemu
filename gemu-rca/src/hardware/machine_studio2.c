@@ -1,5 +1,6 @@
 #include "studio2.h"
 #include "gemu/memory.h"
+#include "gemu/screendump.h"
 #include "vga/rca_display.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
@@ -206,6 +207,20 @@ static void studio2_media_status_cart(void *ud, char *buf, size_t buf_len) {
 
 /* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
+static bool studio2_screendump(void *ud, const char *path) {
+    RcaStudio2State *s = ud;
+    int w = STUDIO2_DISPLAY_W, h = STUDIO2_DISPLAY_H;
+    uint8_t *rgb = malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return false;
+    for (int i = 0; i < w * h; i++) {
+        uint8_t v = s->vram[i] ? 0xFF : 0x00;
+        rgb[i*3+0] = v; rgb[i*3+1] = v; rgb[i*3+2] = v;
+    }
+    bool ok = gemu_screendump(path, rgb, w, h);
+    free(rgb);
+    return ok;
+}
+
 RcaStudio2State *rca_studio2_create(const RcaConfig *cfg) {
     RcaStudio2State *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -263,6 +278,7 @@ RcaStudio2State *rca_studio2_create(const RcaConfig *cfg) {
     }
 
     s->monitor = gemu_monitor_create();
+    gemu_monitor_set_screendump_cb(s->monitor, studio2_screendump, s);
     gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
         .name   = "cartridge",
         .kind   = "cartridge",

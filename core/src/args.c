@@ -205,12 +205,7 @@ bool gemu_args_parse(int argc, char **argv,
             bool found = false;
             for (int d = 0; d < N_DISPLAYS; d++) {
                 if (strcmp(display_table[d].name, v) == 0) {
-                    if (!(def->display_mask & GEMU_DISP_F(display_table[d].type))) {
-                        fprintf(stderr, "%s: display '%s' not supported "
-                                "(try -display ?)\n", def->prog, v);
-                        return false;
-                    }
-                    out->display_type    = display_table[d].type;
+                    out->display_type     = display_table[d].type;
                     out->display_explicit = true;
                     found = true;
                     break;
@@ -268,6 +263,17 @@ bool gemu_args_parse(int argc, char **argv,
             fprintf(stderr, "%s: unknown option '%s' (try -h)\n", def->prog, a);
             return false;
         }
+    }
+
+    /* Validate the final display choice against what this binary supports */
+    if (out->display_explicit &&
+        !(def->display_mask & GEMU_DISP_F(out->display_type))) {
+        const char *name = "unknown";
+        for (int d = 0; d < N_DISPLAYS; d++)
+            if (display_table[d].type == out->display_type) { name = display_table[d].name; break; }
+        fprintf(stderr, "%s: display '%s' not supported (try -display ?)\n",
+                def->prog, name);
+        return false;
     }
 
     /* VNC without an explicit -display → headless */
