@@ -37,7 +37,7 @@ jobs:
             EXTRA_LDFLAGS="-static"
 
       - name: Package
-        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-6502
+        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-mos
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
