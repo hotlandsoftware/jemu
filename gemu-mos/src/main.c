@@ -28,7 +28,7 @@ static const GemuDevDesc vgas[] = {
 };
 
 static const GemuArgsDef def = {
-    .prog       = "gemu-6502",
+    .prog       = "gemu-mos",
     .machines   = machines, .n_machines = (int)GEMU_ARRAY_LEN(machines),
     .cpus       = cpus,     .n_cpus     = (int)GEMU_ARRAY_LEN(cpus),
     .vgas       = vgas,     .n_vgas     = (int)GEMU_ARRAY_LEN(vgas),
@@ -49,16 +49,16 @@ static const GemuArgsDef def = {
         "  -soundhw CHIP      Sound hardware: none | 2a03  (default: 2a03 for NES)\n"
         "  -device NAME       Attach a device to the next controller port (use -device ? to list)\n"
         "\nExample commands:\n"
-        "  ./bin/gemu-6502 -M generic -rom 0xE000:rom.bin\n"
-        "  ./bin/gemu-6502 -rom 0x0000:6502_functional_test.bin -start 0x0400\n"
-        "  ./bin/gemu-6502 -M nes -cartridge game.nes -vnc :1\n",
+        "  ./bin/gemu-mos -M generic -rom 0xE000:rom.bin\n"
+        "  ./bin/gemu-mos -rom 0x0000:6502_functional_test.bin -start 0x0400\n"
+        "  ./bin/gemu-mos -M nes -cartridge game.nes -vnc :1\n",
 };
 
 /* ── ROM argument parsing ────────────────────────────────────────────────── */
 
 static bool add_rom(MosConfig *cfg, uint32_t addr, const char *path) {
     if (cfg->n_roms >= MOS_MAX_ROM_LOADS) {
-        fprintf(stderr, "gemu-6502: too many -rom loads (max %d)\n", MOS_MAX_ROM_LOADS);
+        fprintf(stderr, "gemu-mos: too many -rom loads (max %d)\n", MOS_MAX_ROM_LOADS);
         return false;
     }
     cfg->roms[cfg->n_roms].addr = addr;
@@ -70,7 +70,7 @@ static bool add_rom(MosConfig *cfg, uint32_t addr, const char *path) {
 static bool parse_rom_arg(MosConfig *cfg, const char *arg) {
     uint32_t addr = 0;
     const char *path;
-    if (gemu_parse_addr_arg("gemu-6502", arg, &addr, &path) < 0) return false;
+    if (gemu_parse_addr_arg("gemu-mos", arg, &addr, &path) < 0) return false;
     return add_rom(cfg, addr, path);
 }
 
@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
                 int n = mos_romdb_load_dir(&cfg, val, alias);
                 if (n < 0) return 1;
                 if (n == 0) {
-                    fprintf(stderr, "gemu-6502: no known ROMs in '%s' for machine '%s'\n",
+                    fprintf(stderr, "gemu-mos: no known ROMs in '%s' for machine '%s'\n",
                             val, alias);
                     return 1;
                 }
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(mode, "software") == 0)    cfg.display_renderer = GEMU_RENDERER_SOFTWARE;
             else if (strcmp(mode, "accelerated") == 0) cfg.display_renderer = GEMU_RENDERER_ACCELERATED;
             else {
-                fprintf(stderr, "gemu-6502: unknown -renderer '%s' (use -renderer ? to list)\n", mode);
+                fprintf(stderr, "gemu-mos: unknown -renderer '%s' (use -renderer ? to list)\n", mode);
                 return 1;
             }
         } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
@@ -165,11 +165,11 @@ int main(int argc, char *argv[]) {
             }
             const NesDeviceDesc *dev = nes_device_find(name);
             if (!dev) {
-                fprintf(stderr, "gemu-6502: unknown device '%s' (try -device ?)\n", name);
+                fprintf(stderr, "gemu-mos: unknown device '%s' (try -device ?)\n", name);
                 return 1;
             }
             if (cfg.n_ports >= NES_PORTS) {
-                fprintf(stderr, "gemu-6502: all %d controller ports are already occupied\n", NES_PORTS);
+                fprintf(stderr, "gemu-mos: all %d controller ports are already occupied\n", NES_PORTS);
                 return 1;
             }
             cfg.ports[cfg.n_ports++] = dev->type;
@@ -184,18 +184,18 @@ int main(int argc, char *argv[]) {
             if      (strcmp(hw, "none") == 0) { cfg.sound = MOS_SOUND_NONE;  cfg.sound_explicit = true; }
             else if (strcmp(hw, "2a03") == 0) { cfg.sound = MOS_SOUND_2A03; cfg.sound_explicit = true; }
             else {
-                fprintf(stderr, "gemu-6502: unknown -soundhw '%s' (use -soundhw ? to list)\n", hw);
+                fprintf(stderr, "gemu-mos: unknown -soundhw '%s' (use -soundhw ? to list)\n", hw);
                 return 1;
             }
         } else if (strcmp(rem[i], "-ppu-debug") == 0) {
             cfg.ppu_debug = true;
         } else {
-            fprintf(stderr, "gemu-6502: unknown option '%s' (try -h)\n", rem[i]);
+            fprintf(stderr, "gemu-mos: unknown option '%s' (try -h)\n", rem[i]);
             return 1;
         }
     }
 
-    /* Positional ROM (single-file usage: gemu-6502 rom.bin) */
+    /* Positional ROM (single-file usage: gemu-mos rom.bin) */
     if (args.rom_path) {
         if (!add_rom(&cfg, 0x0000u, args.rom_path)) return 1;
     }
@@ -239,18 +239,18 @@ int main(int argc, char *argv[]) {
     /* Validate machine-specific requirements */
     if (cfg.machine == MOS_MACHINE_NES) {
         if (!cfg.cart_path) {
-            fprintf(stderr, "gemu-6502: NES requires -cartridge FILE.nes\n");
+            fprintf(stderr, "gemu-mos: NES requires -cartridge FILE.nes\n");
             return 1;
         }
     } else {
         if (cfg.n_roms == 0) {
-            fprintf(stderr, "gemu-6502: no ROM specified — use -rom ADDR:FILE\n");
+            fprintf(stderr, "gemu-mos: no ROM specified — use -rom ADDR:FILE\n");
             return 1;
         }
     }
 
     if (SDL_Init(0) < 0) {
-        fprintf(stderr, "gemu-6502: SDL_Init failed: %s\n", SDL_GetError());
+        fprintf(stderr, "gemu-mos: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
 

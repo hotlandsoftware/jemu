@@ -115,7 +115,7 @@ RCA_OBJ := $(patsubst %.c, $(RCA_BUILDDIR)/%.o, $(RCA_CORE_SRC) $(RCA_SRC))
 
 .PHONY: all clean rca-force
 
-all: bin/gemu-chip8$(EXESUFFIX) bin/gemu-rca$(EXESUFFIX) bin/gemu-6502$(EXESUFFIX)
+all: bin/gemu-chip8$(EXESUFFIX) bin/gemu-rca$(EXESUFFIX) bin/gemu-mos$(EXESUFFIX)
 
 bin/gemu-chip8$(EXESUFFIX): $(CHIP8_OBJ)
 	@mkdir -p bin
@@ -136,12 +136,12 @@ $(RCA_BUILDDIR)/%.o: %.c
 # ── 6502 ─────────────────────────────────────────────────────────────────────
 
 MOS_CFLAGS := $(BASE_CFLAGS) \
-	-Igemu-6502/include \
-	-Igemu-6502/src \
-	-Igemu-6502/src/cpu \
-	-Igemu-6502/src/hardware \
-	-Igemu-6502/src/vga \
-	-Igemu-6502/src/audio \
+	-Igemu-mos/include \
+	-Igemu-mos/src \
+	-Igemu-mos/src/cpu \
+	-Igemu-mos/src/hardware \
+	-Igemu-mos/src/vga \
+	-Igemu-mos/src/audio \
 	$(SDL2_CFLAGS) $(EXTRA_CFLAGS)
 MOS_LDFLAGS := $(SDL2_LIBS) -pthread
 ifdef WINDOWS
@@ -158,20 +158,20 @@ MOS_CORE_SRC := \
 	core/src/screendump.c
 
 MOS_SRC := \
-	gemu-6502/src/main.c \
-	gemu-6502/src/cpu/mos6502.c \
-	gemu-6502/src/vga/rp2c02.c \
-	gemu-6502/src/vga/display_sdl.c \
-	gemu-6502/src/audio/apu2a03.c \
-	gemu-6502/src/hardware/machine_generic.c \
-	gemu-6502/src/hardware/machine_nes.c \
-	gemu-6502/src/hardware/nes_devices.c \
-	gemu-6502/src/hardware/romdb.c
+	gemu-mos/src/main.c \
+	gemu-mos/src/cpu/mos6502.c \
+	gemu-mos/src/vga/rp2c02.c \
+	gemu-mos/src/vga/display_sdl.c \
+	gemu-mos/src/audio/apu2a03.c \
+	gemu-mos/src/hardware/machine_generic.c \
+	gemu-mos/src/hardware/machine_nes.c \
+	gemu-mos/src/hardware/nes_devices.c \
+	gemu-mos/src/hardware/romdb.c
 
 ifdef GTK
 MOS_CFLAGS   += $(shell pkg-config --cflags gtk+-3.0) -DGEMU_GTK
 MOS_LDFLAGS  += $(shell pkg-config --libs gtk+-3.0)
-MOS_SRC      += gemu-6502/src/vga/display_gtk.c core/src/gtk_menu.c core/src/video_gtk.c
+MOS_SRC      += gemu-mos/src/vga/display_gtk.c core/src/gtk_menu.c core/src/video_gtk.c
 MOS_BUILDDIR := build/mos-gtk
 else
 MOS_BUILDDIR := build/mos
@@ -179,7 +179,7 @@ endif
 
 MOS_OBJ := $(patsubst %.c, $(MOS_BUILDDIR)/%.o, $(MOS_CORE_SRC) $(MOS_SRC))
 
-bin/gemu-6502$(EXESUFFIX): $(MOS_OBJ)
+bin/gemu-mos$(EXESUFFIX): $(MOS_OBJ)
 	@mkdir -p bin
 	$(CC) -o $@ $^ $(MOS_LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -189,15 +189,15 @@ $(MOS_OBJ): $(CORE_HDRS) \
 	core/include/gemu/vnc.h \
 	core/include/gemu/video.h \
 	core/include/gemu/sha256.h \
-	gemu-6502/include/mos6502cfg.h \
-	gemu-6502/src/cpu/mos6502.h \
-	gemu-6502/src/hardware/generic.h \
-	gemu-6502/src/hardware/nes.h \
-	gemu-6502/src/hardware/nes_devices.h \
-	gemu-6502/src/hardware/romdb.h \
-	gemu-6502/src/vga/rp2c02.h \
-	gemu-6502/src/vga/nes_display.h \
-	gemu-6502/src/audio/apu2a03.h \
+	gemu-mos/include/mos6502cfg.h \
+	gemu-mos/src/cpu/mos6502.h \
+	gemu-mos/src/hardware/generic.h \
+	gemu-mos/src/hardware/nes.h \
+	gemu-mos/src/hardware/nes_devices.h \
+	gemu-mos/src/hardware/romdb.h \
+	gemu-mos/src/vga/rp2c02.h \
+	gemu-mos/src/vga/nes_display.h \
+	gemu-mos/src/audio/apu2a03.h \
 	core/include/gemu/gtk_menu.h
 
 $(MOS_BUILDDIR)/%.o: %.c
