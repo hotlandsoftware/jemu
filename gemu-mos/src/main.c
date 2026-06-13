@@ -16,6 +16,7 @@
 /* ── Device registry ─────────────────────────────────────────────────────── */
 
 static const GemuDevDesc machines[] = {
+    {"famicom", "Nintendo Family Computer (Ricoh 2A03 + RP2C02, alias for nes)"},
     {"generic", "Generic MOS 6502 (flat 64 KB, ROM at user-specified address)"},
     {"nes",     "Nintendo Entertainment System (Ricoh 2A03 + RP2C02)"},
 };
@@ -24,7 +25,7 @@ static const GemuDevDesc cpus[] = {
     {"2a03", "Ricoh 2A03 (NES CPU — 6502 without decimal mode)"},
 };
 static const GemuDevDesc vgas[] = {
-    {"2c02", "Ricoh RP2C02 (NES PPU — 256x240 NTSC)"},
+    {"2c02", "Ricoh RP2C02 (256x240 px, NTSC, NES PPU)"},
 };
 
 static const GemuArgsDef def = {
@@ -106,6 +107,7 @@ int main(int argc, char *argv[]) {
     if (args.machine) {
         if      (strcmp(args.machine, "generic") == 0) cfg.machine = MOS_MACHINE_GENERIC;
         else if (strcmp(args.machine, "nes")     == 0) cfg.machine = MOS_MACHINE_NES;
+        else if (strcmp(args.machine, "famicom") == 0) cfg.machine = MOS_MACHINE_NES;
     }
 
     if (args.cpu) {

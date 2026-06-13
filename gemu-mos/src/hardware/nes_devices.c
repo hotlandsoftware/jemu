@@ -3,7 +3,7 @@
 #include <string.h>
 
 static const NesDeviceDesc devices[] = {
-    {"nes-controller", "NES Standard Controller", NES_DEVICE_CONTROLLER},
+    {"nes-controller", "NES/Famicom Standard Controller", NES_DEVICE_CONTROLLER},
     {"zapper",         "NES Zapper (light gun)",  NES_DEVICE_ZAPPER},
 };
 
