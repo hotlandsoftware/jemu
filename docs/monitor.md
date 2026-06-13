@@ -74,3 +74,15 @@ Ejects media from a registered device.
 > ``screendump (image name)``
 
 Dumps a screenshot of the emulator.
+
+> ``gamegenie add (code)``
+
+Inserts a Game Genie code. Only supported on: ``nes``, ``snes`` (future), ``gameboy`` (future), ``genesis`` (future), and ``gamegear`` (future)
+
+> ``gamegenie list``
+
+Lists active Game Genie codes. Only supported on: ``nes``, ``snes`` (future), ``gameboy`` (future), ``genesis`` (future), and ``gamegear`` (future)
+
+> ``gamegenie delete (code)``
+
+Deletes a Game Genie code. Only supported on: ``nes``, ``snes`` (future), ``gameboy`` (future), ``genesis`` (future), and ``gamegear`` (future)
