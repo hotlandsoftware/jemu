@@ -125,22 +125,30 @@ void rp2c02_write(Rp2c02 *ppu, uint8_t reg, uint8_t val) {
     ppu->open_bus = val;
 
     switch (reg & 7u) {
-    case 0:
+    case 0: {
         PPU_LOG("PPUCTRL  <- %02X (NMI=%d SPR_PT=%d BG_PT=%d 8x16=%d inc=%d NT=%d)\n",
                 val, !!(val & PPUCTRL_NMI_EN), !!(val & PPUCTRL_SPR_PT),
                 !!(val & PPUCTRL_BG_PT), !!(val & PPUCTRL_SPR_8x16),
                 !!(val & PPUCTRL_VRAM_INC), val & PPUCTRL_NT_SELECT);
+        bool was_nmi_en = (ppu->ppuctrl & PPUCTRL_NMI_EN) != 0;
         ppu->ppuctrl = val;
         ppu->t = (uint16_t)((ppu->t & 0xF3FFu) | ((uint16_t)(val & PPUCTRL_NT_SELECT) << 10));
-        if ((ppu->ppustatus & PPUSTAT_VBLANK) && (val & PPUCTRL_NMI_EN))
+        if ((ppu->ppustatus & PPUSTAT_VBLANK) && (val & PPUCTRL_NMI_EN) && !was_nmi_en)
             ppu->nmi_pending = true;
         break;
-    case 1:
-        PPU_LOG("PPUMASK  <- %02X\n", val);
+    }
+    case 1: {
+        bool was = (ppu->ppumask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR)) != 0;
         ppu->ppumask = val;
         ppu->ppumask_pending = val;
         ppu->ppumask_delay = 0;
+        bool now = (ppu->ppumask & (PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR)) != 0;
+        if (was != now)
+            PPU_LOG("PPUMASK  <- %02X (rendering %s)\n", val, now ? "ON" : "OFF");
+        else
+            PPU_LOG("PPUMASK  <- %02X\n", val);
         break;
+    }
     case 3:
         ppu->oamaddr = val;
         break;

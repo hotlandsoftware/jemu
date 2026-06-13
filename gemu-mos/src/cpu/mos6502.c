@@ -182,7 +182,8 @@ static void do_branch(Mos6502 *c, bool cond) {
 /* ── Interrupt dispatch ───────────────────────────────────────────────────── */
 
 static void service_irq(Mos6502 *c, uint16_t vector, bool brk) {
-    rd(c, c->PC);                           /* dummy fetch */
+    rd(c, c->PC);                           /* dummy fetch 1 */
+    rd(c, (uint16_t)(c->PC + 1));           /* dummy fetch 2 — real 6502 reads PC+1 */
     push(c, (uint8_t)(c->PC >> 8));
     push(c, (uint8_t)(c->PC & 0xFFu));
     push(c, (c->P & ~MOS6502_P_B) | (brk ? MOS6502_P_B : 0u) | MOS6502_P_U);
