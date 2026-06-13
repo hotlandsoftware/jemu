@@ -1,4 +1,5 @@
 #include "nes.h"
+#include "fds.h"
 #include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
 #include "gemu/memory.h"
@@ -429,6 +430,8 @@ static uint8_t nes_prg_direct(const NesState *s, uint16_t addr) {
 static void nes_sync_ppu_to_cpu(NesState *s, uint64_t cpu_cycle) {
     while (s->ppu_synced_cpu_cycle < cpu_cycle) {
         s->ppu_synced_cpu_cycle++;
+        if (s->fds_enabled)
+            s->cpu.irq = fds_tick(&s->fds);
         for (int i = 0; i < 3; i++) {
             rp2c02_tick(&s->ppu);
             if (s->ppu.nmi_pending) {
@@ -549,6 +552,13 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
         return rp2c02_read(&s->ppu, (uint8_t)(addr & 7));
     }
 
+    /* FDS I/O registers */
+    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x4033) {
+        uint8_t v = fds_reg_read(&s->fds, addr);
+        s->cpu.irq = fds_tick(&s->fds);  /* recalculate IRQ after flag clear */
+        return v;
+    }
+
     if (addr == 0x4015) return apu2a03_read(&s->apu, 0x4015);
 
     if (addr == 0x4016) {
@@ -585,12 +595,18 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
     }
 
     if (addr >= 0x6000 && addr < 0x8000) {
+        if (s->fds_enabled) return s->fds.ram[addr - 0x6000u];
         if ((s->cart.mapper == 1 && !(s->mmc1_prg & 0x10)) || s->cart.mapper == 4)
             return s->prg_ram[addr & 0x1FFF];
         return 0;
     }
 
     if (addr >= 0x8000) {
+        if (s->fds_enabled) {
+            if (addr >= 0xE000)
+                return s->fds.bios[addr - 0xE000u];          /* BIOS ROM */
+            return s->fds.ram[addr - 0x6000u];               /* $8000–$DFFF: upper FDS RAM */
+        }
         if (!s->prg) return 0;
         uint8_t rom;
         if (s->cart.mapper == 4) {
@@ -627,6 +643,16 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
         return;
     }
 
+    /* FDS I/O registers */
+    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x4026) {
+        fds_reg_write(&s->fds, addr, val);
+        /* $4025 bit 3 controls mirroring (0=vertical, 1=horizontal) */
+        if (addr == 0x4025)
+            s->ppu.mirror = (val & 0x08) ? RP2C02_MIRROR_HORIZONTAL : RP2C02_MIRROR_VERTICAL;
+        s->cpu.irq = fds_tick(&s->fds);
+        return;
+    }
+
     if (addr == 0x4014) {
         /* OAM DMA: stall CPU 513 cycles, copy 256 bytes to OAM */
         nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
@@ -657,8 +683,15 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
     }
 
     if (addr >= 0x6000 && addr < 0x8000) {
+        if (s->fds_enabled) { s->fds.ram[addr - 0x6000u] = val; return; }
         if ((s->cart.mapper == 1 && !(s->mmc1_prg & 0x10)) || s->cart.mapper == 4)
             s->prg_ram[addr & 0x1FFF] = val;
+        return;
+    }
+
+    /* FDS: $8000–$DFFF is writable RAM */
+    if (s->fds_enabled && addr >= 0x8000 && addr < 0xE000) {
+        s->fds.ram[addr - 0x6000u] = val;
         return;
     }
 
@@ -713,6 +746,31 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
             s->ppu.mirror = m228_mir[mirror];
         }
     }
+}
+
+/* ── FDS media device ────────────────────────────────────────────────────── */
+
+static GemuMediaResult fds_media_change(void *ud, const char *arg,
+                                         char *err, size_t err_len) {
+    NesState *s = ud;
+    if (!arg || !arg[0]) { snprintf(err, err_len, "missing disk path"); return GEMU_MEDIA_ERR; }
+    fds_disk_eject(&s->fds);
+    if (!fds_disk_load(&s->fds, arg)) {
+        snprintf(err, err_len, "failed to load '%s'", arg);
+        return GEMU_MEDIA_ERR;
+    }
+    return GEMU_MEDIA_OK;
+}
+
+static GemuMediaResult fds_media_eject(void *ud, char *err, size_t err_len) {
+    (void)err; (void)err_len;
+    fds_disk_eject(&((NesState *)ud)->fds);
+    return GEMU_MEDIA_OK;
+}
+
+static void fds_media_status(void *ud, char *buf, size_t buf_len) {
+    const NesState *s = ud;
+    snprintf(buf, buf_len, "%s", s->fds.disk_inserted ? "disk inserted" : "no disk");
 }
 
 /* ── Cartridge media device ──────────────────────────────────────────────── */
@@ -841,6 +899,14 @@ static bool nes_screendump(void *ud, const char *path) {
 
 static void nes_reset(NesState *s) {
     rp2c02_reset(&s->ppu);
+    if (s->fds_enabled) {
+        /* FDS: horizontal mirroring until $4025 says otherwise */
+        s->ppu.mirror = RP2C02_MIRROR_HORIZONTAL;
+        s->ppu_synced_cpu_cycle = s->cpu.cycle_count;
+        mos6502_reset(&s->cpu);
+        apu2a03_reset(&s->apu);
+        return;
+    }
     s->ppu.mirror = s->cart.mirror;
     s->ppu_synced_cpu_cycle = s->cpu.cycle_count;
 
@@ -885,18 +951,46 @@ static void nes_reset(NesState *s) {
     apu2a03_reset(&s->apu);
 }
 
+/* Search for the FDS BIOS in common locations relative to CWD */
+static bool fds_find_and_load_bios(FdsState *f) {
+    static const char *const candidates[] = {
+        "roms/disksys.rom",
+        "disksys.rom",
+        NULL,
+    };
+    for (int i = 0; candidates[i]; i++) {
+        FILE *fp = fopen(candidates[i], "rb");
+        if (fp) { fclose(fp); return fds_bios_load(f, candidates[i]); }
+    }
+    fprintf(stderr, "fds: BIOS not found — place disksys.rom in roms/disksys.rom\n");
+    return false;
+}
+
 NesState *nes_create(const MosConfig *cfg) {
     NesState *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
 
-    s->cfg = cfg;
+    s->cfg         = cfg;
+    s->fds_enabled = cfg->fds_enabled;
 
-    if (!cfg->cart_path) {
-        fprintf(stderr, "nes: no cartridge specified — use -cartridge FILE.nes\n");
-        free(s); return NULL;
+    if (s->fds_enabled) {
+        if (!fds_find_and_load_bios(&s->fds)) { free(s); return NULL; }
+        if (cfg->fda_path && !fds_disk_load(&s->fds, cfg->fda_path)) {
+            free(s); return NULL;
+        }
+        /* 8 KB CHR RAM for PPU */
+        s->chr = calloc(1, FDS_CHR_SIZE);
+        if (!s->chr) { free(s); return NULL; }
+        s->chr_is_ram     = true;
+        s->cart.chr_banks = 1;
+        s->cart.mapper    = 0;
+    } else {
+        if (!cfg->cart_path) {
+            fprintf(stderr, "nes: no cartridge specified — use -cartridge FILE.nes\n");
+            free(s); return NULL;
+        }
+        if (!ines_load(s, cfg->cart_path)) { free(s); return NULL; }
     }
-
-    if (!ines_load(s, cfg->cart_path)) { free(s); return NULL; }
 
     /* Wire up PPU CHR bus */
     rp2c02_init(&s->ppu);
@@ -921,14 +1015,25 @@ NesState *nes_create(const MosConfig *cfg) {
 
     s->monitor = gemu_monitor_create();
     gemu_monitor_set_screendump_cb(s->monitor, nes_screendump, s);
-    gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
-        .name   = "cartridge",
-        .kind   = "cartridge",
-        .ud     = s,
-        .change = nes_media_change,
-        .eject  = nes_media_eject,
-        .status = nes_media_status,
-    });
+    if (s->fds_enabled) {
+        gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
+            .name   = "floppy",
+            .kind   = "floppy",
+            .ud     = s,
+            .change = fds_media_change,
+            .eject  = fds_media_eject,
+            .status = fds_media_status,
+        });
+    } else {
+        gemu_monitor_register_media(s->monitor, &(GemuMediaDevice){
+            .name   = "cartridge",
+            .kind   = "cartridge",
+            .ud     = s,
+            .change = nes_media_change,
+            .eject  = nes_media_eject,
+            .status = nes_media_status,
+        });
+    }
 
     if (cfg->display_type == GEMU_DISPLAY_SDL ||
         cfg->display_type == GEMU_DISPLAY_GTK) {
@@ -961,7 +1066,8 @@ NesState *nes_create(const MosConfig *cfg) {
 }
 
 void nes_destroy(NesState *s) {
-    nes_sav_save(s);
+    if (!s->fds_enabled) nes_sav_save(s);
+    if (s->fds_enabled) free(s->fds.disk);
     apu2a03_destroy(&s->apu);
     gemu_monitor_destroy(s->monitor);
     nes_display_destroy(s->display);

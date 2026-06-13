@@ -45,14 +45,16 @@ static const GemuArgsDef def = {
         "  -rom FILE          Load a ROM image; infer address or default to 0x0000\n"
         "  -start ADDR        Override reset vector and start execution at ADDR\n"
         "\nNES options:\n"
-        "  -cartridge FILE    Load an iNES (.nes) cartridge (requires -M nes)\n"
+        "  -cartridge FILE    Insert a cartridge\n"
+        "  -fda FILE          Insert a floppy disk image\n"
         "  -renderer MODE     SDL renderer: auto | software | accelerated (default: auto)\n"
         "  -soundhw CHIP      Sound hardware: none | 2a03  (default: 2a03 for NES)\n"
-        "  -device NAME       Attach a device to the next controller port (use -device ? to list)\n"
+        "  -device NAME       Attach a device (use -device ? to list)\n"
         "\nExample commands:\n"
         "  ./bin/gemu-mos -M generic -rom 0xE000:rom.bin\n"
         "  ./bin/gemu-mos -rom 0x0000:6502_functional_test.bin -start 0x0400\n"
-        "  ./bin/gemu-mos -M nes -cartridge game.nes -vnc :1\n",
+        "  ./bin/gemu-mos -M nes -cartridge game.nes -vnc :1\n"
+        "  ./bin/gemu-mos -M nes -device fds -fda game.fds -device nes-controller\n",
 };
 
 /* ── ROM argument parsing ────────────────────────────────────────────────── */
@@ -143,6 +145,8 @@ int main(int argc, char *argv[]) {
             cfg.has_start_addr = true;
         } else if (strcmp(rem[i], "-cartridge") == 0 && i + 1 < nrem) {
             cfg.cart_path = rem[++i];
+        } else if (strcmp(rem[i], "-fda") == 0 && i + 1 < nrem) {
+            cfg.fda_path = rem[++i];
         } else if (strcmp(rem[i], "-renderer") == 0 && i + 1 < nrem) {
             const char *mode = rem[++i];
             if (strcmp(mode, "?") == 0) {
@@ -162,19 +166,33 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(rem[i], "-device") == 0 && i + 1 < nrem) {
             const char *name = rem[++i];
             if (strcmp(name, "?") == 0) {
-                nes_device_list_print();
+                int n = 0;
+                const NesDeviceDesc *devs = nes_device_list(&n);
+                int maxw = (int)strlen("fds");
+                for (int d = 0; d < n; d++) {
+                    int w = (int)strlen(devs[d].name);
+                    if (w > maxw) maxw = w;
+                }
+                printf("Available devices:\n");
+                printf("  %-*s  Famicom Disk System\n", maxw, "fds");
+                for (int d = 0; d < n; d++)
+                    printf("  %-*s  %s\n", maxw, devs[d].name, devs[d].desc);
                 SDL_Quit(); return 0;
             }
-            const NesDeviceDesc *dev = nes_device_find(name);
-            if (!dev) {
-                fprintf(stderr, "gemu-mos: unknown device '%s' (try -device ?)\n", name);
-                return 1;
+            if (strcmp(name, "fds") == 0) {
+                cfg.fds_enabled = true;
+            } else {
+                const NesDeviceDesc *dev = nes_device_find(name);
+                if (!dev) {
+                    fprintf(stderr, "gemu-mos: unknown device '%s' (try -device ?)\n", name);
+                    return 1;
+                }
+                if (cfg.n_ports >= NES_PORTS) {
+                    fprintf(stderr, "gemu-mos: all %d controller ports are already occupied\n", NES_PORTS);
+                    return 1;
+                }
+                cfg.ports[cfg.n_ports++] = dev->type;
             }
-            if (cfg.n_ports >= NES_PORTS) {
-                fprintf(stderr, "gemu-mos: all %d controller ports are already occupied\n", NES_PORTS);
-                return 1;
-            }
-            cfg.ports[cfg.n_ports++] = dev->type;
         } else if (strcmp(rem[i], "-soundhw") == 0 && i + 1 < nrem) {
             const char *hw = rem[++i];
             if (strcmp(hw, "?") == 0) {
@@ -231,7 +249,8 @@ int main(int argc, char *argv[]) {
 
     /* NES default sound: 2A03 when any output is active; silent when headless.
      * Skipped if the user already chose -soundhw explicitly. */
-    if (cfg.machine == MOS_MACHINE_NES && !cfg.sound_explicit && cfg.cart_path) {
+    if (cfg.machine == MOS_MACHINE_NES && !cfg.sound_explicit &&
+        (cfg.cart_path || cfg.fds_enabled)) {
         bool has_output = (cfg.display_type == GEMU_DISPLAY_SDL ||
                            cfg.display_type == GEMU_DISPLAY_GTK);
         if (has_output)
@@ -240,8 +259,12 @@ int main(int argc, char *argv[]) {
 
     /* Validate machine-specific requirements */
     if (cfg.machine == MOS_MACHINE_NES) {
-        if (!cfg.cart_path) {
-            fprintf(stderr, "gemu-mos: NES requires -cartridge FILE.nes\n");
+        if (!cfg.cart_path && !cfg.fds_enabled) {
+            fprintf(stderr, "gemu-mos: NES requires -cartridge FILE.nes or -device fds\n");
+            return 1;
+        }
+        if (cfg.fda_path && !cfg.fds_enabled) {
+            fprintf(stderr, "gemu-mos: -fda requires -device fds\n");
             return 1;
         }
     } else {

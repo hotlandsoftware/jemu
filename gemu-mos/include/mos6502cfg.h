@@ -51,6 +51,8 @@ typedef struct MosConfig {
     bool            has_start_addr;
     uint16_t        start_addr;
     const char     *cart_path;   /* iNES .nes cartridge file (NES machine) */
+    bool            fds_enabled; /* Famicom Disk System addon active        */
+    const char     *fda_path;    /* FDS disk image path (NULL = no disk)    */
     MosSoundType    sound;
     bool            sound_explicit; /* user passed -soundhw; skip auto-default */
     NesDeviceType   ports[NES_PORTS]; /* devices on controller ports 1–2 */

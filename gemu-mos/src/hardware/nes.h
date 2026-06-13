@@ -1,5 +1,6 @@
 #pragma once
 #include "mos6502cfg.h"
+#include "fds.h"
 #include "../cpu/mos6502.h"
 #include "../vga/rp2c02.h"
 #include "../vga/nes_display.h"
@@ -102,6 +103,10 @@ typedef struct NesState {
     /* Monitor key injection */
     uint8_t  ctrl_inject_mask;        /* button bits to hold */
     int      ctrl_inject_frames;      /* frames remaining (counts down to 0) */
+
+    /* Famicom Disk System */
+    bool     fds_enabled;
+    FdsState fds;
 } NesState;
 
 NesState *nes_create (const MosConfig *cfg);
