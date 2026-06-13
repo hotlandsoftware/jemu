@@ -187,6 +187,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "gemu-6502: unknown -soundhw '%s' (use -soundhw ? to list)\n", hw);
                 return 1;
             }
+        } else if (strcmp(rem[i], "-ppu-debug") == 0) {
+            cfg.ppu_debug = true;
         } else {
             fprintf(stderr, "gemu-6502: unknown option '%s' (try -h)\n", rem[i]);
             return 1;
@@ -256,6 +258,7 @@ int main(int argc, char *argv[]) {
     if (cfg.machine == MOS_MACHINE_NES) {
         NesState *s = nes_create(&cfg);
         if (!s) { SDL_Quit(); return 1; }
+        s->ppu.debug = cfg.ppu_debug;
         nes_run(s, &cfg);
         nes_destroy(s);
     } else {

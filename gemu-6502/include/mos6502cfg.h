@@ -55,4 +55,5 @@ typedef struct MosConfig {
     bool            sound_explicit; /* user passed -soundhw; skip auto-default */
     NesDeviceType   ports[NES_PORTS]; /* devices on controller ports 1–2 */
     int             n_ports;          /* how many ports were explicitly assigned */
+    bool            ppu_debug;
 } MosConfig;

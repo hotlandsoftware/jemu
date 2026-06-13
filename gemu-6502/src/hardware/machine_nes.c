@@ -426,6 +426,21 @@ static uint8_t nes_prg_direct(const NesState *s, uint16_t addr) {
     return s->prg[off];
 }
 
+static void nes_sync_ppu_to_cpu(NesState *s, uint64_t cpu_cycle) {
+    while (s->ppu_synced_cpu_cycle < cpu_cycle) {
+        s->ppu_synced_cpu_cycle++;
+        for (int i = 0; i < 3; i++) {
+            rp2c02_tick(&s->ppu);
+            if (s->ppu.nmi_pending) {
+                s->cpu.nmi = true;
+                s->ppu.nmi_pending = false;
+            }
+            if (s->ppu.dirty)
+                return;
+        }
+    }
+}
+
 static void nes_gamegenie_cmd(NesState *s, const char *line) {
     /* skip "gamegenie" */
     while (*line && !isspace((unsigned char)*line)) line++;
@@ -529,7 +544,10 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
 
     if (addr < 0x2000) return s->ram[addr & 0x07FF];
 
-    if (addr < 0x4000) return rp2c02_read(&s->ppu, (uint8_t)(addr & 7));
+    if (addr < 0x4000) {
+        nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
+        return rp2c02_read(&s->ppu, (uint8_t)(addr & 7));
+    }
 
     if (addr == 0x4015) return apu2a03_read(&s->apu, 0x4015);
 
@@ -603,16 +621,22 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
 
     if (addr < 0x2000) { s->ram[addr & 0x07FF] = val; return; }
 
-    if (addr < 0x4000) { rp2c02_write(&s->ppu, (uint8_t)(addr & 7), val); return; }
+    if (addr < 0x4000) {
+        nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
+        rp2c02_write(&s->ppu, (uint8_t)(addr & 7), val);
+        return;
+    }
 
     if (addr == 0x4014) {
         /* OAM DMA: stall CPU 513 cycles, copy 256 bytes to OAM */
+        nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
         uint8_t page[256];
         uint16_t base = (uint16_t)val << 8;
         for (int i = 0; i < 256; i++)
             page[i] = nes_cpu_read((uint16_t)(base + i), s);
         rp2c02_oam_dma(&s->ppu, page);
         s->cpu.cycle_count += 513;
+        nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
         return;
     }
 
@@ -785,6 +809,7 @@ static bool nes_screendump(void *ud, const char *path) {
 static void nes_reset(NesState *s) {
     rp2c02_reset(&s->ppu);
     s->ppu.mirror = s->cart.mirror;
+    s->ppu_synced_cpu_cycle = s->cpu.cycle_count;
 
     /* Mapper bank state must be set before mos6502_reset reads the reset
        vector, otherwise prg_offsets[1] is 0 and the vector is fetched from
@@ -987,6 +1012,17 @@ void nes_run(NesState *s, const MosConfig *cfg) {
                     for (int i = 0; i < 8; i++) printf("%02X ", ppu->vram[0x3C0 + i]);
                     printf("\nOAM[0..3]:     ");
                     for (int i = 0; i < 16; i++) printf("%02X ", ppu->oam[i]);
+                    printf("\nOAM visible:   ");
+                    int shown = 0;
+                    for (int i = 0; i < 64; i++) {
+                        uint8_t y = ppu->oam[i * 4 + 0];
+                        if (y >= 0xEF) continue;
+                        printf("#%02d:%02X %02X %02X %02X ",
+                               i, y, ppu->oam[i * 4 + 1],
+                               ppu->oam[i * 4 + 2], ppu->oam[i * 4 + 3]);
+                        if (++shown == 12) break;
+                    }
+                    if (!shown) printf("(none)");
                     printf("\n");
                 } else
                     gemu_monitor_unknown_command(s->monitor);
@@ -1013,14 +1049,7 @@ void nes_run(NesState *s, const MosConfig *cfg) {
                     for (uint64_t i = 0; i < delta; i++)
                         apu2a03_tick(&s->apu);
 
-                for (uint64_t i = 0; i < delta * 3; i++) {
-                    rp2c02_tick(&s->ppu);
-                    if (s->ppu.nmi_pending) {
-                        s->cpu.nmi = true;
-                        s->ppu.nmi_pending = false;
-                    }
-                    if (s->ppu.dirty) break;
-                }
+                nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
             }
 
             /* Flush APU samples to SDL audio */

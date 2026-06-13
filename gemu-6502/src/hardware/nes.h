@@ -83,6 +83,7 @@ typedef struct NesState {
     bool     ctrl_strobe;
 
     char           cart_path_buf[512]; /* path of currently loaded cartridge */
+    uint64_t       ppu_synced_cpu_cycle;
     bool           battery_autosave;  /* user opted in to save SRAM on exit */
     char           sav_path[512];     /* ~/.gemu/<game>.sav or AppData equivalent */
 

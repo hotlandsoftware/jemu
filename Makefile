@@ -142,7 +142,7 @@ MOS_CFLAGS := $(BASE_CFLAGS) \
 	-Igemu-6502/src/hardware \
 	-Igemu-6502/src/vga \
 	-Igemu-6502/src/audio \
-	$(SDL2_CFLAGS)
+	$(SDL2_CFLAGS) $(EXTRA_CFLAGS)
 MOS_LDFLAGS := $(SDL2_LIBS) -pthread
 ifdef WINDOWS
 MOS_LDFLAGS += -lws2_32 -mconsole
