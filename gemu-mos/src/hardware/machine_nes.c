@@ -151,9 +151,9 @@ static bool ines_load(NesState *s, const char *path) {
     else                  s->cart.mirror = RP2C02_MIRROR_HORIZONTAL;
 
     switch (s->cart.mapper) {
-    case 0: case 1: case 2: case 4: case 66: break;
+    case 0: case 1: case 2: case 4: case 66: case 228: break;
     default:
-        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2, MMC3/4, GxROM/66)\n",
+        fprintf(stderr, "nes: mapper %u not supported (NROM/0, MMC1/1, UxROM/2, MMC3/4, GxROM/66, Action52/228)\n",
                 s->cart.mapper);
         fclose(f); return false;
     }
@@ -679,6 +679,39 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
             }
         }
         else if (s->cart.mapper == 4) mmc3_cpu_write(s, addr, val);
+        else if (s->cart.mapper == 228) {
+            /* Action 52: address lines encode config, data byte is ignored.
+             * A[14:11] = PRG bank, A[10] = mode (0=32KB, 1=16KB fixed-last),
+             * A[9:2] = CHR 8KB bank, A[1:0] = mirroring */
+            uint8_t prg_sel  = (uint8_t)((addr >> 11) & 0xFu);
+            uint8_t prg_mode = (uint8_t)((addr >> 10) & 1u);
+            uint8_t chr_bank = (uint8_t)((addr >>  2) & 0xFFu);
+            uint8_t mirror   = (uint8_t)(addr & 3u);
+
+            uint32_t prg_size = (uint32_t)s->cart.prg_banks * 0x4000u;
+            if (!prg_mode) {
+                /* 32KB: A11 ignored, pair the two 16KB halves */
+                uint32_t base = ((uint32_t)(prg_sel & ~1u) * 0x4000u) % prg_size;
+                s->prg_offsets[0] = base;
+                s->prg_offsets[1] = base + 0x4000u;
+            } else {
+                /* 16KB: selected bank at $8000, last bank fixed at $C000 */
+                s->prg_offsets[0] = ((uint32_t)prg_sel * 0x4000u) % prg_size;
+                s->prg_offsets[1] = (uint32_t)(s->cart.prg_banks - 1) * 0x4000u;
+            }
+
+            uint32_t chr_size = (uint32_t)s->cart.chr_banks * 0x2000u;
+            if (chr_size > 0) {
+                s->chr_offsets[0] = ((uint32_t)chr_bank * 0x2000u) % chr_size;
+                s->chr_offsets[1] = s->chr_offsets[0] + 0x1000u;
+            }
+
+            static const uint8_t m228_mir[4] = {
+                RP2C02_MIRROR_HORIZONTAL, RP2C02_MIRROR_VERTICAL,
+                RP2C02_MIRROR_SINGLE_A,   RP2C02_MIRROR_SINGLE_B,
+            };
+            s->ppu.mirror = m228_mir[mirror];
+        }
     }
 }
 
@@ -828,6 +861,11 @@ static void nes_reset(NesState *s) {
         s->chr_offsets[0] = 0;
         s->chr_offsets[1] = 0x1000u;
     } else if (s->cart.mapper == 66) {
+        s->prg_offsets[0] = 0;
+        s->prg_offsets[1] = 0x4000u;
+        s->chr_offsets[0] = 0;
+        s->chr_offsets[1] = 0x1000u;
+    } else if (s->cart.mapper == 228) {
         s->prg_offsets[0] = 0;
         s->prg_offsets[1] = 0x4000u;
         s->chr_offsets[0] = 0;
