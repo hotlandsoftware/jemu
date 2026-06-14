@@ -951,21 +951,6 @@ static void nes_reset(NesState *s) {
     apu2a03_reset(&s->apu);
 }
 
-/* Search for the FDS BIOS in common locations relative to CWD */
-static bool fds_find_and_load_bios(FdsState *f) {
-    static const char *const candidates[] = {
-        "roms/disksys.rom",
-        "disksys.rom",
-        NULL,
-    };
-    for (int i = 0; candidates[i]; i++) {
-        FILE *fp = fopen(candidates[i], "rb");
-        if (fp) { fclose(fp); return fds_bios_load(f, candidates[i]); }
-    }
-    fprintf(stderr, "fds: BIOS not found — place disksys.rom in roms/disksys.rom\n");
-    return false;
-}
-
 NesState *nes_create(const MosConfig *cfg) {
     NesState *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -974,7 +959,17 @@ NesState *nes_create(const MosConfig *cfg) {
     s->fds_enabled = cfg->fds_enabled;
 
     if (s->fds_enabled) {
-        if (!fds_find_and_load_bios(&s->fds)) { free(s); return NULL; }
+        const char *bios_path = NULL;
+        for (int i = 0; i < cfg->n_roms; i++) {
+            if (cfg->roms[i].addr == 0xE000u) { bios_path = cfg->roms[i].path; break; }
+        }
+        if (!bios_path && cfg->n_roms > 0)
+            bios_path = cfg->roms[0].path;
+        if (!bios_path) {
+            fprintf(stderr, "nes: FDS BIOS not specified — use -rom disksys.rom or -rom roms/\n");
+            free(s); return NULL;
+        }
+        if (!fds_bios_load(&s->fds, bios_path)) { free(s); return NULL; }
         if (cfg->fda_path && !fds_disk_load(&s->fds, cfg->fda_path)) {
             free(s); return NULL;
         }
@@ -1067,7 +1062,7 @@ NesState *nes_create(const MosConfig *cfg) {
 
 void nes_destroy(NesState *s) {
     if (!s->fds_enabled) nes_sav_save(s);
-    if (s->fds_enabled) free(s->fds.disk);
+    if (s->fds_enabled) { free(s->fds.disk); free(s->fds.fwd_mask); }
     apu2a03_destroy(&s->apu);
     gemu_monitor_destroy(s->monitor);
     nes_display_destroy(s->display);

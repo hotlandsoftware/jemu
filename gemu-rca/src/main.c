@@ -61,7 +61,7 @@ static const GemuArgsDef def = {
     ,
     .vnc_support  = true,
     .extra_help =
-        "\nRCA options:\n"
+        "\nArguments:\n"
         "  -rom ADDR:FILE   Load a ROM/blob at address ADDR; may be repeated\n"
         "  -rom FILE        Load a ROM/blob using machine/content address detection, or 0x0000\n"
         "  -load-addr ADDR  Load positional ROM at ADDR (default 0x0000)\n"

@@ -14,6 +14,10 @@ static const MosRomDbEntry rom_db[] = {
     /* Generic MOS 6502 */
     { "9f00c8a4055f441894683462ac8ecbf007d15df29cef77e03555977f9a03a2f0",  0x0000, "generic", "6502_functional_test.bin"  },
 
+    /* NES — Famicom Disk System BIOS */
+    { "99c18490ed9002d9c6d999b9d8d15be5c051bdfa7cc7e73318053c9a994b0178",  0xE000, "nes",     "disksys.rom"               },
+    { "99c18490ed9002d9c6d999b9d8d15be5c051bdfa7cc7e73318053c9a994b0178",  0xE000, "famicom", "disksys.rom"               },
+
     { NULL, 0, NULL, NULL }
 };
 

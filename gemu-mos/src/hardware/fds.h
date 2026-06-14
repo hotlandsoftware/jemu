@@ -7,12 +7,14 @@
 #define FDS_BIOS_SIZE       0x2000u  /* 8 KB BIOS ROM:  CPU $E000–$FFFF       */
 #define FDS_CHR_SIZE        0x2000u  /* 8 KB CHR RAM:   PPU $0000–$1FFF       */
 #define FDS_CYCLES_PER_BYTE 150u     /* CPU cycles between disk byte transfers */
+#define FDS_MASK_BYTES      ((FDS_SIDE_BYTES + 7u) / 8u) /* 1 bit per phys byte */
 
 typedef struct {
     uint8_t  bios[FDS_BIOS_SIZE];
     uint8_t  ram[FDS_RAM_SIZE];   /* CPU $6000–$DFFF */
 
-    uint8_t *disk;        /* disk_sides * FDS_SIDE_BYTES bytes, or NULL */
+    uint8_t *disk;        /* disk_sides * FDS_SIDE_BYTES: physical byte stream  */
+    uint8_t *fwd_mask;    /* disk_sides * FDS_MASK_BYTES: 1=forward to CPU     */
     uint8_t  disk_sides;
     uint8_t  cur_side;
     bool     disk_inserted;

@@ -40,11 +40,11 @@ static const GemuArgsDef def = {
                   | GEMU_DISP_F(GEMU_DISPLAY_NONE),
     .vnc_support  = true,
     .extra_help =
-        "\n6502 options:\n"
+        "\nArguments:\n"
         "  -rom ADDR:FILE     Load a ROM image at CPU address ADDR\n"
-        "  -rom FILE          Load a ROM image; infer address or default to 0x0000\n"
+        "  -rom FILE          Load a ROM image (or FDS BIOS with -device fds)\n"
+        "  -rom DIR           Directory containing ROM files (identified by SHA256)\n"
         "  -start ADDR        Override reset vector and start execution at ADDR\n"
-        "\nNES options:\n"
         "  -cartridge FILE    Insert a cartridge\n"
         "  -fda FILE          Insert a floppy disk image\n"
         "  -renderer MODE     SDL renderer: auto | software | accelerated (default: auto)\n"
@@ -261,6 +261,10 @@ int main(int argc, char *argv[]) {
     if (cfg.machine == MOS_MACHINE_NES) {
         if (!cfg.cart_path && !cfg.fds_enabled) {
             fprintf(stderr, "gemu-mos: NES requires -cartridge FILE.nes or -device fds\n");
+            return 1;
+        }
+        if (cfg.fds_enabled && cfg.n_roms == 0) {
+            fprintf(stderr, "gemu-mos: FDS requires a BIOS ROM: -rom disksys.rom  or  -rom roms/\n");
             return 1;
         }
         if (cfg.fda_path && !cfg.fds_enabled) {
