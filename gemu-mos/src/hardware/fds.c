@@ -143,12 +143,13 @@ bool fds_disk_load(FdsState *f, const char *path) {
         fds_expand_side(phys + (size_t)s * FDS_SIDE_BYTES,
                         fmsk + (size_t)s * FDS_MASK_BYTES,
                         raw  + (size_t)s * FDS_SIDE_BYTES, FDS_SIDE_BYTES);
-    free(raw);
 
     free(f->disk);
     free(f->fwd_mask);
+    free(f->raw_disk);
     f->disk          = phys;
     f->fwd_mask      = fmsk;
+    f->raw_disk      = raw;   /* keep for HLE file parsing */
     f->disk_sides    = sides;
     f->cur_side      = 0;
     f->disk_pos      = 0;
@@ -164,8 +165,10 @@ bool fds_disk_load(FdsState *f, const char *path) {
 void fds_disk_eject(FdsState *f) {
     free(f->disk);
     free(f->fwd_mask);
+    free(f->raw_disk);
     f->disk          = NULL;
     f->fwd_mask      = NULL;
+    f->raw_disk      = NULL;
     f->disk_sides    = 0;
     f->disk_inserted = false;
     f->disk_pos      = 0;

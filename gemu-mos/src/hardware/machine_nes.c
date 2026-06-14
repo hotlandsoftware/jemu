@@ -1,5 +1,6 @@
 #include "nes.h"
 #include "fds.h"
+#include "fds_hle.h"
 #include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
 #include "gemu/memory.h"
@@ -759,6 +760,8 @@ static GemuMediaResult fds_media_change(void *ud, const char *arg,
         snprintf(err, err_len, "failed to load '%s'", arg);
         return GEMU_MEDIA_ERR;
     }
+    if (s->fds.hle_mode)
+        fds_hle_boot(&s->fds, s->chr);
     return GEMU_MEDIA_OK;
 }
 
@@ -959,26 +962,33 @@ NesState *nes_create(const MosConfig *cfg) {
     s->fds_enabled = cfg->fds_enabled;
 
     if (s->fds_enabled) {
+        /* 8 KB CHR RAM for PPU (needed before HLE boot so CHR files can load) */
+        s->chr = calloc(1, FDS_CHR_SIZE);
+        if (!s->chr) { free(s); return NULL; }
+        s->chr_is_ram     = true;
+        s->cart.chr_banks = 1;
+        s->cart.mapper    = 0;
+
+        /* BIOS: use real ROM if provided, otherwise install HLE stub */
         const char *bios_path = NULL;
         for (int i = 0; i < cfg->n_roms; i++) {
             if (cfg->roms[i].addr == 0xE000u) { bios_path = cfg->roms[i].path; break; }
         }
         if (!bios_path && cfg->n_roms > 0)
             bios_path = cfg->roms[0].path;
-        if (!bios_path) {
-            fprintf(stderr, "nes: FDS BIOS not specified — use -rom disksys.rom or -rom roms/\n");
-            free(s); return NULL;
+
+        if (bios_path) {
+            if (!fds_bios_load(&s->fds, bios_path)) { free(s->chr); free(s); return NULL; }
+        } else {
+            fds_hle_build_rom(&s->fds);
+            s->fds.hle_mode = true;
         }
-        if (!fds_bios_load(&s->fds, bios_path)) { free(s); return NULL; }
-        if (cfg->fda_path && !fds_disk_load(&s->fds, cfg->fda_path)) {
-            free(s); return NULL;
+
+        if (cfg->fda_path) {
+            if (!fds_disk_load(&s->fds, cfg->fda_path)) { free(s->chr); free(s); return NULL; }
+            if (s->fds.hle_mode)
+                fds_hle_boot(&s->fds, s->chr);
         }
-        /* 8 KB CHR RAM for PPU */
-        s->chr = calloc(1, FDS_CHR_SIZE);
-        if (!s->chr) { free(s); return NULL; }
-        s->chr_is_ram     = true;
-        s->cart.chr_banks = 1;
-        s->cart.mapper    = 0;
     } else {
         if (!cfg->cart_path) {
             fprintf(stderr, "nes: no cartridge specified — use -cartridge FILE.nes\n");
@@ -1062,7 +1072,7 @@ NesState *nes_create(const MosConfig *cfg) {
 
 void nes_destroy(NesState *s) {
     if (!s->fds_enabled) nes_sav_save(s);
-    if (s->fds_enabled) { free(s->fds.disk); free(s->fds.fwd_mask); }
+    if (s->fds_enabled) { free(s->fds.disk); free(s->fds.fwd_mask); free(s->fds.raw_disk); }
     apu2a03_destroy(&s->apu);
     gemu_monitor_destroy(s->monitor);
     nes_display_destroy(s->display);

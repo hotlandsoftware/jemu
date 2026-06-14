@@ -42,7 +42,7 @@ static const GemuArgsDef def = {
     .extra_help =
         "\nArguments:\n"
         "  -rom ADDR:FILE     Load a ROM image at CPU address ADDR\n"
-        "  -rom FILE          Load a ROM image (or FDS BIOS with -device fds)\n"
+        "  -rom FILE          Load a ROM image (or optional FDS BIOS with -device fds)\n"
         "  -rom DIR           Directory containing ROM files (identified by SHA256)\n"
         "  -start ADDR        Override reset vector and start execution at ADDR\n"
         "  -cartridge FILE    Insert a cartridge\n"
@@ -263,10 +263,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "gemu-mos: NES requires -cartridge FILE.nes or -device fds\n");
             return 1;
         }
-        if (cfg.fds_enabled && cfg.n_roms == 0) {
-            fprintf(stderr, "gemu-mos: FDS requires a BIOS ROM: -rom disksys.rom  or  -rom roms/\n");
-            return 1;
-        }
+        /* No -rom is fine — machine_nes will install the HLE stub automatically */
         if (cfg.fda_path && !cfg.fds_enabled) {
             fprintf(stderr, "gemu-mos: -fda requires -device fds\n");
             return 1;

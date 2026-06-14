@@ -15,9 +15,11 @@ typedef struct {
 
     uint8_t *disk;        /* disk_sides * FDS_SIDE_BYTES: physical byte stream  */
     uint8_t *fwd_mask;    /* disk_sides * FDS_MASK_BYTES: 1=forward to CPU     */
+    uint8_t *raw_disk;    /* disk_sides * FDS_SIDE_BYTES: raw .fds block data  */
     uint8_t  disk_sides;
     uint8_t  cur_side;
     bool     disk_inserted;
+    bool     hle_mode;    /* true = no BIOS ROM, stub installed, files pre-loaded */
 
     /* Timer IRQ — $4020/$4021 latch, $4022 control */
     uint16_t timer_latch;
