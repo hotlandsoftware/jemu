@@ -714,24 +714,34 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
         }
         else if (s->cart.mapper == 4) mmc3_cpu_write(s, addr, val);
         else if (s->cart.mapper == 228) {
-            /* Action 52: address lines encode config, data byte is ignored.
-             * A[14:11] = PRG bank, A[10] = mode (0=32KB, 1=16KB fixed-last),
-             * A[9:2] = CHR 8KB bank, A[1:0] = mirroring */
-            uint8_t prg_sel  = (uint8_t)((addr >> 11) & 0xFu);
-            uint8_t prg_mode = (uint8_t)((addr >> 10) & 1u);
-            uint8_t chr_bank = (uint8_t)((addr >>  2) & 0xFFu);
-            uint8_t mirror   = (uint8_t)(addr & 3u);
+            /* Action 52 — NESdev register layout (address + data bus):
+             *   FEDCBA98 76543210  (full 16-bit address)
+             *   1.MHHPPP PPS.CCCC
+             * D(13)=mirror  C:B(12:11)=chip-sel  A→6(10:6)=page(5-bit)
+             * 5=PRG-mode  3:0=chr_hi   data[1:0]=chr_lo
+             * Three 512KB chips at chip-sel 0,1,3; chip-sel 2 = open bus. */
+            uint8_t chip     = (uint8_t)((addr >> 11) & 3u);
+            uint8_t page     = (uint8_t)((addr >> 6) & 0x1Fu);
+            uint8_t prg_mode = (uint8_t)((addr >> 5) & 1u);
+            uint8_t chr_hi   = (uint8_t)(addr & 0xFu);
+            uint8_t mirror   = (uint8_t)((addr >> 13) & 1u);
+            uint8_t chr_bank = (uint8_t)((chr_hi << 2) | (val & 3u));
 
+            if (chip == 2u) return; /* open bus — no PRG chip, ignore */
+
+            uint32_t global_bank = (chip == 3u) ? (64u + page)
+                                                 : ((uint32_t)chip * 32u + page);
             uint32_t prg_size = (uint32_t)s->cart.prg_banks * 0x4000u;
             if (!prg_mode) {
-                /* 32KB: A11 ignored, pair the two 16KB halves */
-                uint32_t base = ((uint32_t)(prg_sel & ~1u) * 0x4000u) % prg_size;
-                s->prg_offsets[0] = base;
-                s->prg_offsets[1] = base + 0x4000u;
+                /* 32KB split: round to even/odd pair */
+                uint32_t base = (global_bank & ~1u) * 0x4000u;
+                s->prg_offsets[0] = base % prg_size;
+                s->prg_offsets[1] = (base + 0x4000u) % prg_size;
             } else {
-                /* 16KB: selected bank at $8000, last bank fixed at $C000 */
-                s->prg_offsets[0] = ((uint32_t)prg_sel * 0x4000u) % prg_size;
-                s->prg_offsets[1] = (uint32_t)(s->cart.prg_banks - 1) * 0x4000u;
+                /* 16KB: same bank mirrored in both $8000 and $C000 windows */
+                uint32_t base = (global_bank * 0x4000u) % prg_size;
+                s->prg_offsets[0] = base;
+                s->prg_offsets[1] = base;
             }
 
             uint32_t chr_size = (uint32_t)s->cart.chr_banks * 0x2000u;
@@ -740,11 +750,7 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
                 s->chr_offsets[1] = s->chr_offsets[0] + 0x1000u;
             }
 
-            static const uint8_t m228_mir[4] = {
-                RP2C02_MIRROR_HORIZONTAL, RP2C02_MIRROR_VERTICAL,
-                RP2C02_MIRROR_SINGLE_A,   RP2C02_MIRROR_SINGLE_B,
-            };
-            s->ppu.mirror = m228_mir[mirror];
+            s->ppu.mirror = mirror ? RP2C02_MIRROR_HORIZONTAL : RP2C02_MIRROR_VERTICAL;
         }
     }
 }
@@ -935,8 +941,10 @@ static void nes_reset(NesState *s) {
         s->chr_offsets[0] = 0;
         s->chr_offsets[1] = 0x1000u;
     } else if (s->cart.mapper == 228) {
-        s->prg_offsets[0] = 0;
-        s->prg_offsets[1] = 0x4000u;
+        /* Reset maps the last two 16KB banks so the reset vector is readable */
+        uint32_t last = (uint32_t)(s->cart.prg_banks - 1) * 0x4000u;
+        s->prg_offsets[0] = last >= 0x4000u ? last - 0x4000u : 0;
+        s->prg_offsets[1] = last;
         s->chr_offsets[0] = 0;
         s->chr_offsets[1] = 0x1000u;
     } else if (s->cart.mapper == 4) {
