@@ -20,7 +20,10 @@ typedef enum {
 
 typedef enum {
     MOS_SOUND_NONE,
-    MOS_SOUND_2A03,  /* Ricoh 2A03 built-in APU */
+    MOS_SOUND_2A03,             /* Ricoh 2A03 built-in APU → SDL audio output */
+#ifdef HAVE_ALSA
+    MOS_SOUND_2A03_MIDI,        /* Ricoh 2A03 built-in APU → ALSA MIDI output */
+#endif
 } MosSoundType;
 
 typedef enum {

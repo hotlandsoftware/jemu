@@ -399,6 +399,7 @@ void apu2a03_write(Apu2a03 *a, uint16_t addr, uint8_t v) {
         if (a->fc_mode) clock_frame(a, true);
         break;
     }
+    if (a->write_tap) a->write_tap(addr, v, a->write_tap_ud);
 }
 
 uint8_t apu2a03_read(Apu2a03 *a, uint16_t addr) {
@@ -430,14 +431,18 @@ void apu2a03_flush(Apu2a03 *a) {
 /* ── Init / reset / destroy ──────────────────────────────────────────────── */
 
 void apu2a03_reset(Apu2a03 *a) {
-    /* Silence all channels, keep audio device */
+    /* Silence all channels, keep audio device and external hooks */
     SDL_AudioDeviceID dev = a->audio_dev;
     uint8_t (*mr)(uint16_t, void*) = a->mem_read;
     void *mu = a->mem_ud;
+    void (*tap)(uint16_t, uint8_t, void*) = a->write_tap;
+    void *tu = a->write_tap_ud;
     memset(a, 0, sizeof(*a));
-    a->audio_dev  = dev;
-    a->mem_read   = mr;
-    a->mem_ud     = mu;
+    a->audio_dev    = dev;
+    a->mem_read     = mr;
+    a->mem_ud       = mu;
+    a->write_tap    = tap;
+    a->write_tap_ud = tu;
     a->noise.lfsr = 1;
     for (int i = 0; i < 8; i++) a->dmc.bits_rem = 8;
     a->dmc.bits_rem = 8;

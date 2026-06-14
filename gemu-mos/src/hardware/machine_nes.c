@@ -1024,6 +1024,14 @@ NesState *nes_create(const MosConfig *cfg) {
             fprintf(stderr, "nes: APU audio init failed (continuing silently)\n");
         s->apu.mem_read = nes_cpu_read;
         s->apu.mem_ud   = s;
+#ifdef HAVE_ALSA
+    } else if (cfg->sound == MOS_SOUND_2A03_MIDI) {
+        s->apu.mem_read    = nes_cpu_read;
+        s->apu.mem_ud      = s;
+        apu_midi_open(&s->apu_midi);
+        s->apu.write_tap    = apu_midi_tap;
+        s->apu.write_tap_ud = &s->apu_midi;
+#endif
     }
 
     s->monitor = gemu_monitor_create();
@@ -1081,6 +1089,9 @@ NesState *nes_create(const MosConfig *cfg) {
 void nes_destroy(NesState *s) {
     if (!s->fds_enabled) nes_sav_save(s);
     if (s->fds_enabled) { free(s->fds.disk); free(s->fds.fwd_mask); free(s->fds.raw_disk); }
+#ifdef HAVE_ALSA
+    apu_midi_close(&s->apu_midi);
+#endif
     apu2a03_destroy(&s->apu);
     gemu_monitor_destroy(s->monitor);
     nes_display_destroy(s->display);

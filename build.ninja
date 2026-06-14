@@ -108,43 +108,47 @@ build gemu-rca: phony bin/gemu-rca
 
 # --- mos ---
 build build/mos/core/src/memory.o: cc core/src/memory.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/args.o: cc core/src/args.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/monitor.o: cc core/src/monitor.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/vnc.o: cc core/src/vnc.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/video_sdl.o: cc core/src/video_sdl.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/sha256.o: cc core/src/sha256.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/core/src/screendump.o: cc core/src/screendump.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/main.o: cc gemu-mos/src/main.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/cpu/mos6502.o: cc gemu-mos/src/cpu/mos6502.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/vga/rp2c02.o: cc gemu-mos/src/vga/rp2c02.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/vga/display_sdl.o: cc gemu-mos/src/vga/display_sdl.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/audio/apu2a03.o: cc gemu-mos/src/audio/apu2a03.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/machine_generic.o: cc gemu-mos/src/hardware/machine_generic.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/machine_nes.o: cc gemu-mos/src/hardware/machine_nes.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/fds.o: cc gemu-mos/src/hardware/fds.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/fds_hle.o: cc gemu-mos/src/hardware/fds_hle.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/nes_devices.o: cc gemu-mos/src/hardware/nes_devices.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
 build build/mos/gemu-mos/src/hardware/romdb.o: cc gemu-mos/src/hardware/romdb.c
-  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT
-build bin/gemu-mos: link build/mos/core/src/memory.o build/mos/core/src/args.o build/mos/core/src/monitor.o build/mos/core/src/vnc.o build/mos/core/src/video_sdl.o build/mos/core/src/sha256.o build/mos/core/src/screendump.o build/mos/gemu-mos/src/main.o build/mos/gemu-mos/src/cpu/mos6502.o build/mos/gemu-mos/src/vga/rp2c02.o build/mos/gemu-mos/src/vga/display_sdl.o build/mos/gemu-mos/src/audio/apu2a03.o build/mos/gemu-mos/src/hardware/machine_generic.o build/mos/gemu-mos/src/hardware/machine_nes.o build/mos/gemu-mos/src/hardware/fds.o build/mos/gemu-mos/src/hardware/fds_hle.o build/mos/gemu-mos/src/hardware/nes_devices.o build/mos/gemu-mos/src/hardware/romdb.o
-  LDFLAGS = -pthread -lSDL2
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
+build build/mos/gemu-mos/src/audio/midi_out.o: cc gemu-mos/src/audio/midi_out.c
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
+build build/mos/gemu-mos/src/audio/apu_midi.o: cc gemu-mos/src/audio/apu_midi.c
+  CFLAGS = $CFLAGS_BASE -Icore/include -Igemu-mos/include -Igemu-mos/src -Igemu-mos/src/cpu -Igemu-mos/src/hardware -Igemu-mos/src/vga -Igemu-mos/src/audio -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DHAVE_ALSA
+build bin/gemu-mos: link build/mos/core/src/memory.o build/mos/core/src/args.o build/mos/core/src/monitor.o build/mos/core/src/vnc.o build/mos/core/src/video_sdl.o build/mos/core/src/sha256.o build/mos/core/src/screendump.o build/mos/gemu-mos/src/main.o build/mos/gemu-mos/src/cpu/mos6502.o build/mos/gemu-mos/src/vga/rp2c02.o build/mos/gemu-mos/src/vga/display_sdl.o build/mos/gemu-mos/src/audio/apu2a03.o build/mos/gemu-mos/src/hardware/machine_generic.o build/mos/gemu-mos/src/hardware/machine_nes.o build/mos/gemu-mos/src/hardware/fds.o build/mos/gemu-mos/src/hardware/fds_hle.o build/mos/gemu-mos/src/hardware/nes_devices.o build/mos/gemu-mos/src/hardware/romdb.o build/mos/gemu-mos/src/audio/midi_out.o build/mos/gemu-mos/src/audio/apu_midi.o
+  LDFLAGS = -pthread -lSDL2 -lasound -lm
 build gemu-mos: phony bin/gemu-mos
 
 default bin/gemu-chip8 bin/gemu-rca bin/gemu-mos

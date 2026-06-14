@@ -48,7 +48,11 @@ static const GemuArgsDef def = {
         "  -cartridge FILE    Insert a cartridge\n"
         "  -fda FILE          Insert a floppy disk image\n"
         "  -renderer MODE     SDL renderer: auto | software | accelerated (default: auto)\n"
-        "  -soundhw CHIP      Sound hardware: none | 2a03  (default: 2a03 for NES)\n"
+        "  -soundhw CHIP      Sound hardware: none | 2a03"
+#ifdef HAVE_ALSA
+        " | 2a03,output=midi"
+#endif
+        "  (default: 2a03 for NES)\n"
         "  -device NAME       Attach a device (use -device ? to list)\n"
         "\nExample commands:\n"
         "  ./bin/gemu-mos -M generic -rom 0xE000:rom.bin\n"
@@ -197,12 +201,18 @@ int main(int argc, char *argv[]) {
             const char *hw = rem[++i];
             if (strcmp(hw, "?") == 0) {
                 printf("Available sound hardware:\n");
-                printf("  2a03  Ricoh 2A03 APU (NES pulse x2, triangle, noise, DMC)\n");
-                printf("  none  Disable sound output\n");
+                printf("  2a03               Ricoh 2A03 APU -> SDL audio (default)\n");
+#ifdef HAVE_ALSA
+                printf("  2a03,output=midi   Ricoh 2A03 APU -> ALSA MIDI port\n");
+#endif
+                printf("  none               Disable sound output\n");
                 SDL_Quit(); return 0;
             }
-            if      (strcmp(hw, "none") == 0) { cfg.sound = MOS_SOUND_NONE;  cfg.sound_explicit = true; }
+            if      (strcmp(hw, "none") == 0) { cfg.sound = MOS_SOUND_NONE; cfg.sound_explicit = true; }
             else if (strcmp(hw, "2a03") == 0) { cfg.sound = MOS_SOUND_2A03; cfg.sound_explicit = true; }
+#ifdef HAVE_ALSA
+            else if (strcmp(hw, "2a03,output=midi") == 0) { cfg.sound = MOS_SOUND_2A03_MIDI; cfg.sound_explicit = true; }
+#endif
             else {
                 fprintf(stderr, "gemu-mos: unknown -soundhw '%s' (use -soundhw ? to list)\n", hw);
                 return 1;

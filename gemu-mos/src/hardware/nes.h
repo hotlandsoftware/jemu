@@ -5,6 +5,9 @@
 #include "../vga/rp2c02.h"
 #include "../vga/nes_display.h"
 #include "../audio/apu2a03.h"
+#ifdef HAVE_ALSA
+#  include "../audio/apu_midi.h"
+#endif
 #include "gemu/vnc.h"
 #include "gemu/monitor.h"
 #include <stdint.h>
@@ -73,6 +76,9 @@ typedef struct NesState {
     uint32_t mmc3_chr_offsets[8]; /* 8× 1KB windows: PPU $0000–$1FFF */
 
     Apu2a03  apu;
+#ifdef HAVE_ALSA
+    ApuMidi  apu_midi;
+#endif
 
     /* OAM DMA state */
     bool     dma_pending;

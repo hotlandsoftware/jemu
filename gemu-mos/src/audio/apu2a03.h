@@ -83,6 +83,10 @@ typedef struct Apu2a03 {
     /* DMC memory reader (set by NES machine) */
     uint8_t (*mem_read)(uint16_t addr, void *ud);
     void    *mem_ud;
+
+    /* Optional tap: called after every register write (NULL = disabled) */
+    void (*write_tap)(uint16_t addr, uint8_t val, void *ud);
+    void  *write_tap_ud;
 } Apu2a03;
 
 bool    apu2a03_init   (Apu2a03 *a);   /* opens SDL audio; returns false on failure */
