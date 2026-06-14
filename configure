@@ -301,7 +301,21 @@ def main():
         cflags = f'$CFLAGS_BASE {inc} {" ".join(sdl2_cflags)}{defs}'.strip()
 
         # Per-target LDFLAGS
-        ld_parts = [base_ldflags] + sdl2_libs
+        # Static Linux builds: SDL2 must be linked *dynamically* even when
+        # everything else is static.  SDL2 loads its X11/Wayland video backends
+        # at runtime via dlopen().  A fully-static musl binary cannot dlopen
+        # host .so files, so SDL2 silently falls back to the headless dummy
+        # driver and no window appears.  We link only libSDL2 itself
+        # dynamically (RPATH=$ORIGIN finds the bundled libSDL2-2.0.so.0) and
+        # include its other deps (m, dl, pthread …) statically as usual.
+        sdl2_dynamic = args.static and not on_windows
+        ld_parts = [base_ldflags]
+        if sdl2_dynamic:
+            # SDL2 deps minus libSDL2 itself — linked statically into our binary
+            ld_parts += [x for x in sdl2_libs
+                         if x != '-lSDL2' and not x.startswith('-Wl,-rpath')]
+        else:
+            ld_parts += sdl2_libs
         if want_gtk:
             ld_parts += gtk_libs
         if have_curses and td['has_curses']:
@@ -310,7 +324,13 @@ def main():
             ld_parts += alsa_libs
         if on_windows:
             ld_parts += td['ldflags_win']
-        ldflags = ' '.join(ld_parts)
+        if sdl2_dynamic:
+            # $$ORIGIN in ninja → $ORIGIN at link time → binary finds libSDL2
+            # in its own directory at runtime.
+            ldflags = (' '.join(ld_parts) +
+                       ' -Wl,-rpath,$$ORIGIN -Wl,-Bdynamic -lSDL2 -Wl,-Bstatic')
+        else:
+            ldflags = ' '.join(ld_parts)
 
         # Collect sources
         srcs = list(td['core_src']) + list(td['src'])

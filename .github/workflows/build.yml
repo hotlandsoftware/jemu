@@ -36,8 +36,15 @@ jobs:
       - name: Build static binaries
         run: ninja
 
+      - name: Bundle SDL2
+        run: |
+          # SDL2 is linked dynamically so its X11/Wayland video backends work.
+          # Copy the shared library next to the binaries for a self-contained package.
+          find /usr -name 'libSDL2-2.0.so.0*' ! -type l | head -1 \
+            | xargs -I{} cp {} bin/libSDL2-2.0.so.0
+
       - name: Package
-        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-mos
+        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-mos libSDL2-2.0.so.0
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
