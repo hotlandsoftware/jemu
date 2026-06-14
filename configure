@@ -213,7 +213,7 @@ def main():
     have_alsa  = False
     alsa_cflags = []
     alsa_libs   = []
-    if 'mos' in targets and not on_windows:
+    if 'mos' in targets and not on_windows and not args.static:
         cf = pkg('alsa', '--cflags', *pkg_flags)
         lf = pkg('alsa', '--libs',   *pkg_flags)
         if check('ALSA (MIDI out)', lf):
