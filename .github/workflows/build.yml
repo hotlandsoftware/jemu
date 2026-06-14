@@ -10,41 +10,26 @@ permissions:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
-    container:
-      image: alpine:latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Install dependencies
-        run: |
-          apk add --no-cache \
-            git gcc make ninja python3 musl-dev \
-            sdl2-dev \
-            ncurses-dev ncurses-static \
-            alsa-lib-dev \
-            libx11-dev libxext-dev \
-            libxcursor-dev libxi-dev libxrandr-dev \
-            libxxf86vm-dev \
-            libxcb-dev mesa-dev libdrm-dev \
-            eudev-dev
-
       - uses: actions/checkout@v4
 
-      - name: Configure
-        run: ./configure --target-list="chip8,mos,rca" --static --extra-ldflags="-static"
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc make ninja-build python3 \
+            libsdl2-dev libncurses-dev
 
-      - name: Build static binaries
+      - name: Configure
+        run: ./configure --target-list="chip8,mos,rca"
+
+      - name: Build
         run: ninja
 
-      - name: Bundle SDL2
-        run: |
-          # SDL2 is linked dynamically so its X11/Wayland video backends work.
-          # Copy the shared library next to the binaries for a self-contained package.
-          find /usr -name 'libSDL2-2.0.so.0*' ! -type l | head -1 \
-            | xargs -I{} cp {} bin/libSDL2-2.0.so.0
-
       - name: Package
-        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-mos libSDL2-2.0.so.0
+        run: tar czf gemu-linux-x86_64.tar.gz -C bin gemu-chip8 gemu-rca gemu-mos
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
