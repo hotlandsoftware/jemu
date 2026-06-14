@@ -221,9 +221,91 @@ bool fds_tick(FdsState *f) {
         || (f->transfer_flag && (f->drive_ctrl & 0x80) != 0);
 }
 
+/* ── FDS wavetable synthesizer ───────────────────────────────────────────── */
+
+float fds_audio_tick(FdsState *f) {
+    static const int8_t mod_delta[8] = {0, 1, 2, 4, 0, -4, -3, -1};
+    static const float  master_vol[4] = {1.0f, 0.667f, 0.5f, 0.4f};
+
+    /* ---- Master envelope clock ---- */
+    if (!f->snd_wav_halt && !f->snd_env_halt) {
+        uint32_t period = ((uint32_t)f->snd_env_spd + 1u) * 8u;
+        if (++f->snd_env_div >= period) {
+            f->snd_env_div = 0;
+
+            /* Volume envelope */
+            if (!f->snd_vol_dis) {
+                if (++f->snd_vol_div >= f->snd_vol_spd) {
+                    f->snd_vol_div = 0;
+                    if (f->snd_vol_grow) { if (f->snd_vol < 32) f->snd_vol++; }
+                    else                 { if (f->snd_vol > 0)  f->snd_vol--; }
+                }
+            }
+
+            /* Mod gain envelope */
+            if (!f->snd_gain_dis) {
+                if (++f->snd_gain_div >= f->snd_gain_spd) {
+                    f->snd_gain_div = 0;
+                    if (f->snd_gain_grow) { if (f->snd_gain < 63) f->snd_gain++; }
+                    else                  { if (f->snd_gain > 0)  f->snd_gain--; }
+                }
+            }
+        }
+    }
+
+    /* ---- Modulation oscillator ---- */
+    if (!f->snd_wav_halt && !f->snd_mod_dis && f->snd_mod_freq) {
+        uint8_t old_pos = (uint8_t)((f->snd_mod_phase >> 16) & 63);
+        f->snd_mod_phase = (f->snd_mod_phase + f->snd_mod_freq) & 0x3FFFFFu;
+        uint8_t new_pos = (uint8_t)((f->snd_mod_phase >> 16) & 63);
+        if (new_pos != old_pos) {
+            uint8_t step = f->snd_mod[new_pos] & 7;
+            if (step == 4) {
+                f->snd_mod_cnt = 0;
+            } else {
+                int c = (int)f->snd_mod_cnt + (int)mod_delta[step];
+                if (c >  63) c =  63;
+                if (c < -64) c = -64;
+                f->snd_mod_cnt = (int8_t)c;
+            }
+        }
+    }
+
+    /* No output in wave write mode or when oscillator halted */
+    if (f->snd_wav_write || f->snd_wav_halt)
+        return 0.0f;
+
+    /* ---- Compute modulated frequency ---- */
+    uint16_t freq = f->snd_freq;
+    if (!f->snd_mod_dis && f->snd_mod_cnt) {
+        int32_t temp = (int32_t)f->snd_mod_cnt * (int32_t)freq;
+        if (temp > 0 && (temp & 0xF)) temp += 0x10;
+        temp >>= 4;
+        temp = temp * (int32_t)f->snd_gain >> 6;
+        int32_t result = (int32_t)freq + temp;
+        if (result < 0)      result = 0;
+        if (result > 0xFFF)  result = 0xFFF;
+        freq = (uint16_t)result;
+    }
+
+    /* ---- Main oscillator (6.16 fixed-point: integer=waveform index) ---- */
+    f->snd_phase = (f->snd_phase + freq) & 0x3FFFFFu;
+    uint8_t sample = f->snd_wav[(f->snd_phase >> 16) & 63] & 63;
+
+    /* ---- Volume and master attenuation ---- */
+    uint8_t vol = f->snd_vol < 32 ? f->snd_vol : 32;
+    float out = (float)((unsigned)sample * vol) / (63.0f * 32.0f);
+    out *= master_vol[f->snd_master_vol & 3];
+    return out * 0.5f;   /* scaled to ~APU output level */
+}
+
 /* ── Register I/O ────────────────────────────────────────────────────────── */
 
 uint8_t fds_reg_read(FdsState *f, uint16_t addr) {
+    /* Waveform table readback */
+    if (addr >= 0x4040 && addr <= 0x407F)
+        return f->snd_wav[addr - 0x4040u];
+
     switch (addr) {
     case 0x4030: {
         /* Bit 7: byte transfer flag; bit 6: end-of-head; bit 3: mirroring; bit 0: timer IRQ.
@@ -255,7 +337,65 @@ uint8_t fds_reg_read(FdsState *f, uint16_t addr) {
 }
 
 void fds_reg_write(FdsState *f, uint16_t addr, uint8_t val) {
+    /* Waveform table: writable only in wave write mode ($4089 bit7) */
+    if (addr >= 0x4040 && addr <= 0x407F) {
+        if (f->snd_wav_write)
+            f->snd_wav[addr - 0x4040u] = val & 0x3Fu;
+        return;
+    }
+
     switch (addr) {
+    /* ---- FDS sound registers ---- */
+    case 0x4080:
+        f->snd_vol_dis  = (val & 0x80) != 0;
+        f->snd_vol_grow = (val & 0x40) != 0;
+        f->snd_vol_spd  = val & 0x3Fu;
+        if (f->snd_vol_dis) f->snd_vol = f->snd_vol_spd;
+        break;
+    case 0x4082:
+        f->snd_freq = (f->snd_freq & 0x0F00u) | val;
+        break;
+    case 0x4083:
+        f->snd_freq     = (f->snd_freq & 0x00FFu) | (((uint16_t)val & 0x0Fu) << 8);
+        f->snd_wav_halt = (val & 0x80) != 0;
+        f->snd_env_halt = (val & 0x40) != 0;
+        if (f->snd_wav_halt) f->snd_env_div = 0;
+        break;
+    case 0x4084:
+        f->snd_gain_dis  = (val & 0x80) != 0;
+        f->snd_gain_grow = (val & 0x40) != 0;
+        f->snd_gain_spd  = val & 0x3Fu;
+        if (f->snd_gain_dis) f->snd_gain = f->snd_gain_spd;
+        break;
+    case 0x4085: {
+        uint8_t v = val & 0x7Fu;
+        f->snd_mod_cnt = (v & 0x40u) ? (int8_t)(v | 0x80u) : (int8_t)v;
+        break;
+    }
+    case 0x4086:
+        f->snd_mod_freq = (f->snd_mod_freq & 0x0F00u) | val;
+        break;
+    case 0x4087:
+        f->snd_mod_freq = (f->snd_mod_freq & 0x00FFu) | (((uint16_t)val & 0x0Fu) << 8);
+        f->snd_mod_dis  = (val & 0x80) != 0;
+        if (f->snd_mod_dis) f->snd_mod_phase = 0;
+        break;
+    case 0x4088:
+        if (f->snd_mod_dis) {
+            uint8_t pos = (uint8_t)((f->snd_mod_phase >> 16) & 63);
+            f->snd_mod[pos] = val & 7u;
+            f->snd_mod_phase = (f->snd_mod_phase + 0x10000u) & 0x3FFFFFu;
+        }
+        break;
+    case 0x4089:
+        f->snd_wav_write  = (val & 0x80) != 0;
+        f->snd_master_vol = val & 0x03u;
+        break;
+    case 0x408A:
+        f->snd_env_spd = val;
+        f->snd_env_div = 0;
+        break;
+    /* ---- Disk / timer registers ---- */
     case 0x4020:
         f->timer_latch = (f->timer_latch & 0xFF00u) | val;
         break;

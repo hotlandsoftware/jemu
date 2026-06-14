@@ -553,8 +553,8 @@ static uint8_t nes_cpu_read(uint16_t addr, void *ud) {
         return rp2c02_read(&s->ppu, (uint8_t)(addr & 7));
     }
 
-    /* FDS I/O registers */
-    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x4033) {
+    /* FDS I/O registers ($4020-$408F covers disk regs + wavetable + sound) */
+    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x408Fu) {
         uint8_t v = fds_reg_read(&s->fds, addr);
         s->cpu.irq = fds_tick(&s->fds);  /* recalculate IRQ after flag clear */
         return v;
@@ -644,8 +644,8 @@ static void nes_cpu_write(uint16_t addr, uint8_t val, void *ud) {
         return;
     }
 
-    /* FDS I/O registers */
-    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x4026) {
+    /* FDS I/O registers ($4020-$408A covers disk regs, wavetable and sound) */
+    if (s->fds_enabled && addr >= 0x4020 && addr <= 0x408Au) {
         fds_reg_write(&s->fds, addr, val);
         /* $4025 bit 3 controls mirroring (0=vertical, 1=horizontal) */
         if (addr == 0x4025)
@@ -1195,8 +1195,11 @@ void nes_run(NesState *s, const MosConfig *cfg) {
 
                 /* APU: one tick per CPU cycle */
                 if (s->apu.audio_dev)
-                    for (uint64_t i = 0; i < delta; i++)
+                    for (uint64_t i = 0; i < delta; i++) {
+                        if (s->fds_enabled)
+                            s->apu.fds_in = fds_audio_tick(&s->fds);
                         apu2a03_tick(&s->apu);
+                    }
 
                 nes_sync_ppu_to_cpu(s, s->cpu.cycle_count);
             }

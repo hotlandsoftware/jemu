@@ -272,7 +272,7 @@ void apu2a03_tick(Apu2a03 *a) {
                 tri_out(&a->tri,           a->ch_en[2]),
                 noise_out(&a->noise,       a->ch_en[3]),
                 dmc_out(&a->dmc,           a->ch_en[4])
-            );
+            ) + a->fds_in;
             a->frame_buf[a->frame_n++] = s;
         }
     }

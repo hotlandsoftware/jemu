@@ -77,6 +77,9 @@ typedef struct Apu2a03 {
     /* SDL audio */
     SDL_AudioDeviceID audio_dev;
 
+    /* Expansion audio: written before each tick by the host machine */
+    float    fds_in;
+
     /* DMC memory reader (set by NES machine) */
     uint8_t (*mem_read)(uint16_t addr, void *ud);
     void    *mem_ud;
